@@ -23,7 +23,10 @@ impl VM {
         match self.parse_node(&root_node, code) {
             Ok(ast_node) => {
                 if let ASTNode::SourceFile(source_file) = ast_node {
-                    if let Err(e) = self.jit_compiler.compile_source_file(&source_file) {
+                    if let Err(e) = self
+                        .jit_compiler
+                        .compile_source_file_with_storage(&source_file)
+                    {
                         eprintln!("Compilation error: {:?}", e);
                     }
                 }
@@ -277,6 +280,25 @@ impl VM {
                         }
                     }
                 }
+                "identifier_chain" => {
+                    if expecting_variable {
+                        if let ASTNode::IdentifierChain(chain) = self.parse_node(&child, code)? {
+                            sections.push(ASTMathSection::Variable(
+                                ASTMathVariable::IdentifierChain(chain),
+                            ));
+                            expecting_variable = false;
+                        }
+                    }
+                }
+                "math" => {
+                    if expecting_variable {
+                        if let ASTNode::Math(nested_math) = self.parse_node(&child, code)? {
+                            sections
+                                .push(ASTMathSection::Variable(ASTMathVariable::Math(nested_math)));
+                            expecting_variable = false;
+                        }
+                    }
+                }
                 "math_operation" => {
                     if !expecting_variable {
                         if let ASTNode::MathOperation(op) = self.parse_node(&child, code)? {
@@ -435,6 +457,7 @@ pub enum ASTMathSection {
 pub enum ASTMathVariable {
     IdentifierChain(ASTIdentifierChain),
     Number(ASTNumber),
+    Math(ASTMath),
 }
 
 #[derive(Debug, Clone)]

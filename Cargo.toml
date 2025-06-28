@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 tree-sitter = { version = "0.25.6" }
-tree-sitter-mage = { version = "0.0.3" }
+tree-sitter-mage = { version = "0.0.4" }
 zydis = { version = "4.1.1", features = ["encoder", "serialization"] }
 mmap-rs = { version = "0.6.1" }
 hashbrown = { version = "0.15.4", features = ["nightly", "serde"] }

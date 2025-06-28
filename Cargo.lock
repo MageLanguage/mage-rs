@@ -393,9 +393,9 @@ checksum = "c4013970217383f67b18aef68f6fb2e8d409bc5755227092d32efb0422ba24b8"
 
 [[package]]
 name = "tree-sitter-mage"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34c27d60ef6124d63094dc1276215d439fd3716c6a0b7f9ff417e22f82297686"
+checksum = "5b8e2dc77c4892137a6ad16557cce296977945dc0c0f1cc2d1d20ace360cc182"
 dependencies = [
  "cc",
  "tree-sitter-language",
