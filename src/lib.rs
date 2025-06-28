@@ -4,6 +4,8 @@ pub use jit::*;
 mod virtual_machine;
 pub use virtual_machine::*;
 
+mod tests;
+
 #[derive(Debug)]
 pub enum MageError {
     ParseError(String),

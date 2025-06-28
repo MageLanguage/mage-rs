@@ -4,16 +4,22 @@ use crate::{
     ASTStatementChain, MageError,
 };
 use hashbrown::HashMap;
+use mmap_rs::MmapOptions;
+use zydis::{Decoder, EncoderRequest, Mnemonic, Register, VisibleOperands};
 
 pub struct JITCompiler {
-    variables: HashMap<String, i32>, // Variable name -> stack offset
-    stack_offset: i32,               // Current stack offset
-    variable_values: HashMap<String, i64>, // Variable name -> value
+    code_buffer: Vec<u8>,
+    executable_memory: Option<mmap_rs::Mmap>,
+    pub variables: HashMap<String, i32>, // Variable name -> stack offset
+    pub stack_offset: i32,               // Current stack offset
+    pub variable_values: HashMap<String, i64>, // Final variable values
 }
 
 impl JITCompiler {
     pub fn new() -> Result<Self, MageError> {
         Ok(Self {
+            code_buffer: Vec::new(),
+            executable_memory: None,
             variables: HashMap::new(),
             stack_offset: 0,
             variable_values: HashMap::new(),
@@ -22,38 +28,44 @@ impl JITCompiler {
 
     pub fn compile_source_file(&mut self, source_file: &ASTSourceFile) -> Result<(), MageError> {
         if let Some(ref statement_chain) = source_file.statement_chain {
-            self.compile_statement_chain(statement_chain)?;
+            self.compile_statement_chain_with_storage(statement_chain)?;
         }
         Ok(())
     }
 
     pub fn compile_source(&mut self, source: &ASTSource) -> Result<(), MageError> {
         if let Some(ref statement_chain) = source.statement_chain {
-            self.compile_statement_chain(statement_chain)?;
+            self.compile_statement_chain_with_storage(statement_chain)?;
         }
         Ok(())
     }
 
-    pub fn compile_statement_chain(
+    pub fn compile_statement_chain_with_storage(
         &mut self,
         statement_chain: &ASTStatementChain,
     ) -> Result<(), MageError> {
         for statement in &statement_chain.statements {
-            self.compile_statement(statement)?;
+            self.compile_statement_with_storage(statement)?;
         }
         Ok(())
     }
 
-    pub fn compile_statement(&mut self, statement: &ASTStatement) -> Result<(), MageError> {
+    pub fn compile_statement_with_storage(
+        &mut self,
+        statement: &ASTStatement,
+    ) -> Result<(), MageError> {
         match statement {
-            ASTStatement::Definition(def) => self.compile_definition(def),
+            ASTStatement::Definition(def) => self.compile_definition_with_storage(def),
             ASTStatement::Expression(expr) => self.compile_expression(expr),
         }
     }
 
-    pub fn compile_definition(&mut self, definition: &ASTDefinition) -> Result<(), MageError> {
-        // Evaluate the expression first
-        let value = self.evaluate_expression(&definition.expression)?;
+    pub fn compile_definition_with_storage(
+        &mut self,
+        definition: &ASTDefinition,
+    ) -> Result<(), MageError> {
+        // Compile the expression to get the value
+        let value = self.compile_and_get_expression_value(&definition.expression)?;
 
         // Store the value for each assignment
         for (identifier_chain, _operation) in &definition.assignments {
@@ -62,6 +74,9 @@ impl JITCompiler {
             // Allocate stack space for the variable
             self.stack_offset += 8; // 8 bytes for i64
             self.variables.insert(var_name.clone(), self.stack_offset);
+
+            // Store the value in our hashmap (stack storage will be implemented later)
+            self.variable_values.insert(var_name.clone(), value);
 
             println!("Defined variable '{}' with value: {}", var_name, value);
         }
@@ -72,7 +87,7 @@ impl JITCompiler {
     pub fn compile_expression(&mut self, expression: &ASTExpression) -> Result<(), MageError> {
         match expression {
             ASTExpression::Math(math) => {
-                let result = self.evaluate_math(math)?;
+                let result = self.compile_and_get_math_value(math)?;
                 println!("Math result: {}", result);
                 Ok(())
             }
@@ -85,9 +100,12 @@ impl JITCompiler {
         }
     }
 
-    fn evaluate_expression(&mut self, expression: &ASTExpression) -> Result<i64, MageError> {
+    fn compile_and_get_expression_value(
+        &mut self,
+        expression: &ASTExpression,
+    ) -> Result<i64, MageError> {
         match expression {
-            ASTExpression::Math(math) => self.evaluate_math(math),
+            ASTExpression::Math(math) => self.compile_and_get_math_value(math),
             ASTExpression::Number(number) => self.parse_number(number),
             ASTExpression::IdentifierChain(chain) => {
                 let var_name = self.identifier_chain_to_string(chain);
@@ -99,20 +117,51 @@ impl JITCompiler {
         }
     }
 
-    fn evaluate_math(&mut self, math: &ASTMath) -> Result<i64, MageError> {
+    fn compile_and_get_math_value(&mut self, math: &ASTMath) -> Result<i64, MageError> {
         if math.sections.is_empty() {
             return Ok(0);
         }
 
-        // Get first operand
-        let mut result = match &math.sections[0] {
-            ASTMathSection::Variable(var) => self.evaluate_math_variable(var)?,
+        // Clear previous code
+        self.code_buffer.clear();
+
+        // Generate function prologue
+        self.emit_instruction(EncoderRequest::new64(Mnemonic::PUSH).add_operand(Register::RBP))?;
+        self.emit_instruction(
+            EncoderRequest::new64(Mnemonic::MOV)
+                .add_operand(Register::RBP)
+                .add_operand(Register::RSP),
+        )?;
+
+        // Allocate stack space for local variables if needed
+        if self.stack_offset > 0 {
+            self.emit_instruction(
+                EncoderRequest::new64(Mnemonic::SUB)
+                    .add_operand(Register::RSP)
+                    .add_operand(self.stack_offset as i64),
+            )?;
+        }
+
+        // Load first operand into RAX
+        match &math.sections[0] {
+            ASTMathSection::Variable(var) => {
+                let value = self.compile_math_variable_to_register(var, Register::RAX)?;
+                if value.is_some() {
+                    // If it's a constant, load it directly
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::MOV)
+                            .add_operand(Register::RAX)
+                            .add_operand(value.unwrap()),
+                    )?;
+                }
+                // If it's a variable, it's already loaded into RAX
+            }
             ASTMathSection::Operation(_) => {
                 return Err(MageError::RuntimeError(
                     "Math expression cannot start with operation".to_string(),
                 ));
             }
-        };
+        }
 
         // Process remaining sections in pairs (operation, variable)
         let mut i = 1;
@@ -132,8 +181,10 @@ impl JITCompiler {
                 }
             };
 
-            let operand = match &math.sections[i + 1] {
-                ASTMathSection::Variable(var) => self.evaluate_math_variable(var)?,
+            let operand_value = match &math.sections[i + 1] {
+                ASTMathSection::Variable(var) => {
+                    self.compile_math_variable_to_register(var, Register::RCX)?
+                }
                 ASTMathSection::Operation(_) => {
                     return Err(MageError::RuntimeError(
                         "Expected variable, found operation".to_string(),
@@ -141,43 +192,180 @@ impl JITCompiler {
                 }
             };
 
-            // Apply the operation
-            result = match operation {
-                ASTMathOperation::Add => result + operand,
-                ASTMathOperation::Subtract => result - operand,
-                ASTMathOperation::Multiply => result * operand,
+            // Load operand into RCX if it's a constant
+            if let Some(value) = operand_value {
+                self.emit_instruction(
+                    EncoderRequest::new64(Mnemonic::MOV)
+                        .add_operand(Register::RCX)
+                        .add_operand(value),
+                )?;
+            }
+
+            // Emit the operation
+            match operation {
+                ASTMathOperation::Add => {
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::ADD)
+                            .add_operand(Register::RAX)
+                            .add_operand(Register::RCX),
+                    )?;
+                }
+                ASTMathOperation::Subtract => {
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::SUB)
+                            .add_operand(Register::RAX)
+                            .add_operand(Register::RCX),
+                    )?;
+                }
+                ASTMathOperation::Multiply => {
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::IMUL)
+                            .add_operand(Register::RAX)
+                            .add_operand(Register::RCX),
+                    )?;
+                }
                 ASTMathOperation::Divide => {
-                    if operand == 0 {
-                        return Err(MageError::RuntimeError("Division by zero".to_string()));
-                    }
-                    result / operand
+                    // Check for division by zero at compile time if it's a constant
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::XOR)
+                            .add_operand(Register::RDX)
+                            .add_operand(Register::RDX),
+                    )?;
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::IDIV).add_operand(Register::RCX),
+                    )?;
                 }
                 ASTMathOperation::Modulo => {
-                    if operand == 0 {
-                        return Err(MageError::RuntimeError("Modulo by zero".to_string()));
-                    }
-                    result % operand
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::XOR)
+                            .add_operand(Register::RDX)
+                            .add_operand(Register::RDX),
+                    )?;
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::IDIV).add_operand(Register::RCX),
+                    )?;
+                    self.emit_instruction(
+                        EncoderRequest::new64(Mnemonic::MOV)
+                            .add_operand(Register::RAX)
+                            .add_operand(Register::RDX),
+                    )?;
                 }
-            };
+            }
 
             i += 2;
         }
 
+        // Restore stack pointer
+        if self.stack_offset > 0 {
+            self.emit_instruction(
+                EncoderRequest::new64(Mnemonic::ADD)
+                    .add_operand(Register::RSP)
+                    .add_operand(self.stack_offset as i64),
+            )?;
+        }
+
+        // Generate function epilogue
+        self.emit_instruction(EncoderRequest::new64(Mnemonic::POP).add_operand(Register::RBP))?;
+        self.emit_instruction(EncoderRequest::new64(Mnemonic::RET))?;
+
+        // Print generated assembly for debugging
+        self.print_assembly()?;
+
+        // Execute the generated code
+        let result = self.execute_code()?;
+
         Ok(result)
     }
 
-    fn evaluate_math_variable(&mut self, variable: &ASTMathVariable) -> Result<i64, MageError> {
+    fn compile_math_variable_to_register(
+        &mut self,
+        variable: &ASTMathVariable,
+        _register: Register,
+    ) -> Result<Option<i64>, MageError> {
         match variable {
-            ASTMathVariable::Number(number) => self.parse_number(number),
+            ASTMathVariable::Number(number) => {
+                // Return the constant value to be loaded
+                Ok(Some(self.parse_number(number)?))
+            }
             ASTMathVariable::IdentifierChain(chain) => {
                 let var_name = self.identifier_chain_to_string(chain);
-                self.get_variable_value(&var_name)
+                // For now, load from hashmap (stack loading will be implemented later)
+                let value = self.get_variable_value(&var_name)?;
+                Ok(Some(value))
             }
-            ASTMathVariable::Math(math) => self.evaluate_math(math),
+            ASTMathVariable::Math(nested_math) => {
+                // Save current code buffer state
+                let saved_buffer = self.code_buffer.clone();
+
+                // Compile nested math expression
+                let value = self.compile_and_get_math_value(nested_math)?;
+
+                // Restore code buffer state to avoid interference
+                self.code_buffer = saved_buffer;
+
+                Ok(Some(value))
+            }
         }
     }
 
-    fn identifier_chain_to_string(&self, chain: &ASTIdentifierChain) -> String {
+    fn emit_instruction(&mut self, request: EncoderRequest) -> Result<(), MageError> {
+        request
+            .encode_extend(&mut self.code_buffer)
+            .map_err(|e| MageError::JitError(e))
+            .map(|_| ())
+    }
+
+    fn execute_code(&mut self) -> Result<i64, MageError> {
+        if self.code_buffer.is_empty() {
+            return Ok(0);
+        }
+
+        // Create executable memory mapping
+        let page_size = MmapOptions::page_size();
+        let code_size = self.code_buffer.len();
+        let map_size = ((code_size + page_size - 1) / page_size) * page_size;
+
+        let mut mmap = MmapOptions::new(map_size)
+            .map_err(|e| MageError::RuntimeError(format!("Failed to create memory map: {}", e)))?
+            .map_mut()
+            .map_err(|e| MageError::RuntimeError(format!("Failed to map memory: {}", e)))?;
+
+        // Copy code to the mapping
+        mmap[..code_size].copy_from_slice(&self.code_buffer);
+
+        // Make it executable
+        let exec_mmap = mmap.make_exec().map_err(|(_, e)| {
+            MageError::RuntimeError(format!("Failed to make memory executable: {}", e))
+        })?;
+
+        // Get function pointer and execute
+        let func_ptr: unsafe extern "C" fn() -> i64 =
+            unsafe { std::mem::transmute(exec_mmap.as_ptr()) };
+        let result = unsafe { func_ptr() };
+
+        // Store the executable memory to keep it alive
+        self.executable_memory = Some(exec_mmap);
+
+        Ok(result)
+    }
+
+    fn print_assembly(&self) -> Result<(), MageError> {
+        if self.code_buffer.is_empty() {
+            return Ok(());
+        }
+
+        println!("Generated assembly:");
+        let decoder = Decoder::new64();
+        for insn in decoder.decode_all::<VisibleOperands>(&self.code_buffer, 0) {
+            let (offs, bytes, insn) = insn.map_err(|e| MageError::JitError(e))?;
+            let bytes: String = bytes.iter().map(|x| format!("{x:02x} ")).collect();
+            println!("  0x{:04X}: {:<24} {}", offs, bytes, insn);
+        }
+        println!();
+        Ok(())
+    }
+
+    pub fn identifier_chain_to_string(&self, chain: &ASTIdentifierChain) -> String {
         chain
             .identifiers
             .iter()
@@ -196,17 +384,7 @@ impl JITCompiler {
             .ok_or_else(|| MageError::RuntimeError(format!("Undefined variable: {}", name)))
     }
 
-    fn set_variable_value(&mut self, name: &str, value: i64) {
-        self.variable_values.insert(name.to_string(), value);
-    }
-
-    pub fn compile_and_execute_math(&mut self, math: &ASTMath) -> Result<(), MageError> {
-        let result = self.evaluate_math(math)?;
-        println!("Math result: {}", result);
-        Ok(())
-    }
-
-    fn parse_number(&self, number: &ASTNumber) -> Result<i64, MageError> {
+    pub fn parse_number(&self, number: &ASTNumber) -> Result<i64, MageError> {
         match number {
             ASTNumber::Zero => Ok(0),
             ASTNumber::Binary(s) => {
@@ -231,56 +409,5 @@ impl JITCompiler {
                     .map_err(|e| MageError::ParseError(format!("Invalid hex number: {}", e)))
             }
         }
-    }
-
-    // Override the compile_definition method to actually store values
-    fn compile_definition_with_storage(
-        &mut self,
-        definition: &ASTDefinition,
-    ) -> Result<(), MageError> {
-        // Evaluate the expression first
-        let value = self.evaluate_expression(&definition.expression)?;
-
-        // Store the value for each assignment
-        for (identifier_chain, _operation) in &definition.assignments {
-            let var_name = self.identifier_chain_to_string(identifier_chain);
-            self.set_variable_value(&var_name, value);
-            println!("Defined variable '{}' with value: {}", var_name, value);
-        }
-
-        Ok(())
-    }
-}
-
-// Update the compile_statement method to use the new storage method
-impl JITCompiler {
-    pub fn compile_statement_with_storage(
-        &mut self,
-        statement: &ASTStatement,
-    ) -> Result<(), MageError> {
-        match statement {
-            ASTStatement::Definition(def) => self.compile_definition_with_storage(def),
-            ASTStatement::Expression(expr) => self.compile_expression(expr),
-        }
-    }
-
-    pub fn compile_statement_chain_with_storage(
-        &mut self,
-        statement_chain: &ASTStatementChain,
-    ) -> Result<(), MageError> {
-        for statement in &statement_chain.statements {
-            self.compile_statement_with_storage(statement)?;
-        }
-        Ok(())
-    }
-
-    pub fn compile_source_file_with_storage(
-        &mut self,
-        source_file: &ASTSourceFile,
-    ) -> Result<(), MageError> {
-        if let Some(ref statement_chain) = source_file.statement_chain {
-            self.compile_statement_chain_with_storage(statement_chain)?;
-        }
-        Ok(())
     }
 }

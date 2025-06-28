@@ -23,10 +23,7 @@ impl VM {
         match self.parse_node(&root_node, code) {
             Ok(ast_node) => {
                 if let ASTNode::SourceFile(source_file) = ast_node {
-                    if let Err(e) = self
-                        .jit_compiler
-                        .compile_source_file_with_storage(&source_file)
-                    {
+                    if let Err(e) = self.jit_compiler.compile_source_file(&source_file) {
                         eprintln!("Compilation error: {:?}", e);
                     }
                 }
@@ -37,7 +34,7 @@ impl VM {
         }
     }
 
-    fn parse_node(&self, node: &Node, code: &str) -> Result<ASTNode, MageError> {
+    pub fn parse_node(&self, node: &Node, code: &str) -> Result<ASTNode, MageError> {
         match node.kind() {
             "source_file" => self.parse_source_file(node, code),
             "source" => self.parse_source(node, code),

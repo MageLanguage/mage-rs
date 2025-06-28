@@ -1,9 +1,0 @@
-x : [0d20];
-y : [0d10];
-z : [x - y];
-a : [0d5];
-b : [0d3];
-result : [a * b];
-division_test : [0d15 / 0d3];
-nested_math : [x - [y - a]];
-complex : [[x + y] * [z - a]];
