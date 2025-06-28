@@ -35,7 +35,7 @@ mod tests {
     }
 
     fn get_variable_value(compiler: &JITCompiler, var_name: &str) -> Option<i64> {
-        compiler.variable_values.get(var_name).copied()
+        compiler.get_variable_value(var_name)
     }
 
     #[test]
@@ -323,7 +323,6 @@ mod tests {
         let compiler = compiler.unwrap();
         assert_eq!(compiler.stack_offset, 0);
         assert!(compiler.variables.is_empty());
-        assert!(compiler.variable_values.is_empty());
     }
 
     #[test]
@@ -393,14 +392,14 @@ mod tests {
         "#;
         let compiler = parse_and_compile(code).unwrap();
 
-        // Each variable should allocate 8 bytes on stack
-        assert_eq!(compiler.stack_offset, 24); // 3 variables * 8 bytes each
+        // Each variable should allocate 1 slot on stack
+        assert_eq!(compiler.stack_offset, 3); // 3 variables
         assert_eq!(compiler.variables.len(), 3);
 
-        // Check stack offsets
-        assert_eq!(compiler.variables.get("var1"), Some(&8));
-        assert_eq!(compiler.variables.get("var2"), Some(&16));
-        assert_eq!(compiler.variables.get("var3"), Some(&24));
+        // Check stack offsets (slot-based)
+        assert_eq!(compiler.variables.get("var1"), Some(&1));
+        assert_eq!(compiler.variables.get("var2"), Some(&2));
+        assert_eq!(compiler.variables.get("var3"), Some(&3));
     }
 
     #[test]
@@ -410,10 +409,9 @@ mod tests {
         "#;
         let compiler = parse_and_compile(code).unwrap();
 
-        // Variable should be stored in both variables HashMap (for stack tracking)
-        // and variable_values HashMap (for final results)
+        // Variable should be stored in variables HashMap (for stack tracking)
+        // and retrievable from stack
         assert!(compiler.variables.contains_key("test_var"));
-        assert!(compiler.variable_values.contains_key("test_var"));
-        assert_eq!(compiler.variable_values.get("test_var"), Some(&123));
+        assert_eq!(compiler.get_variable_value("test_var"), Some(123));
     }
 }

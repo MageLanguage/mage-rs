@@ -12,17 +12,19 @@ pub struct JITCompiler {
     executable_memory: Option<mmap_rs::Mmap>,
     pub variables: HashMap<String, i32>, // Variable name -> stack offset
     pub stack_offset: i32,               // Current stack offset
-    pub variable_values: HashMap<String, i64>, // Final variable values
+    stack_memory: Vec<i64>,              // Simulated stack for variable storage
 }
 
 impl JITCompiler {
     pub fn new() -> Result<Self, MageError> {
+        let stack_memory = vec![0i64; 1024]; // Allocate 1024 slots for variables
+
         Ok(Self {
             code_buffer: Vec::new(),
             executable_memory: None,
             variables: HashMap::new(),
             stack_offset: 0,
-            variable_values: HashMap::new(),
+            stack_memory,
         })
     }
 
@@ -72,13 +74,23 @@ impl JITCompiler {
             let var_name = self.identifier_chain_to_string(identifier_chain);
 
             // Allocate stack space for the variable
-            self.stack_offset += 8; // 8 bytes for i64
+            self.stack_offset += 1; // One slot per variable
+            let stack_index = self.stack_offset as usize - 1;
+
+            // Store the variable name -> stack offset mapping
             self.variables.insert(var_name.clone(), self.stack_offset);
 
-            // Store the value in our hashmap (stack storage will be implemented later)
-            self.variable_values.insert(var_name.clone(), value);
+            // Store the actual value on our simulated stack
+            if stack_index < self.stack_memory.len() {
+                self.stack_memory[stack_index] = value;
+            }
 
-            println!("Defined variable '{}' with value: {}", var_name, value);
+            // Value is already stored in simulated stack memory
+
+            println!(
+                "Defined variable '{}' with value: {} at stack offset: {}",
+                var_name, value, self.stack_offset
+            );
         }
 
         Ok(())
@@ -109,7 +121,7 @@ impl JITCompiler {
             ASTExpression::Number(number) => self.parse_number(number),
             ASTExpression::IdentifierChain(chain) => {
                 let var_name = self.identifier_chain_to_string(chain);
-                self.get_variable_value(&var_name)
+                self.get_variable_from_stack(&var_name)
             }
             _ => Err(MageError::RuntimeError(
                 "Unsupported expression type".to_string(),
@@ -133,28 +145,12 @@ impl JITCompiler {
                 .add_operand(Register::RSP),
         )?;
 
-        // Allocate stack space for local variables if needed
-        if self.stack_offset > 0 {
-            self.emit_instruction(
-                EncoderRequest::new64(Mnemonic::SUB)
-                    .add_operand(Register::RSP)
-                    .add_operand(self.stack_offset as i64),
-            )?;
-        }
+        // Stack access will be handled through simulated stack for now
 
         // Load first operand into RAX
         match &math.sections[0] {
             ASTMathSection::Variable(var) => {
-                let value = self.compile_math_variable_to_register(var, Register::RAX)?;
-                if value.is_some() {
-                    // If it's a constant, load it directly
-                    self.emit_instruction(
-                        EncoderRequest::new64(Mnemonic::MOV)
-                            .add_operand(Register::RAX)
-                            .add_operand(value.unwrap()),
-                    )?;
-                }
-                // If it's a variable, it's already loaded into RAX
+                self.compile_math_variable_to_register(var, Register::RAX)?;
             }
             ASTMathSection::Operation(_) => {
                 return Err(MageError::RuntimeError(
@@ -181,24 +177,16 @@ impl JITCompiler {
                 }
             };
 
-            let operand_value = match &math.sections[i + 1] {
+            // Load operand into RCX
+            match &math.sections[i + 1] {
                 ASTMathSection::Variable(var) => {
-                    self.compile_math_variable_to_register(var, Register::RCX)?
+                    self.compile_math_variable_to_register(var, Register::RCX)?;
                 }
                 ASTMathSection::Operation(_) => {
                     return Err(MageError::RuntimeError(
                         "Expected variable, found operation".to_string(),
                     ));
                 }
-            };
-
-            // Load operand into RCX if it's a constant
-            if let Some(value) = operand_value {
-                self.emit_instruction(
-                    EncoderRequest::new64(Mnemonic::MOV)
-                        .add_operand(Register::RCX)
-                        .add_operand(value),
-                )?;
             }
 
             // Emit the operation
@@ -225,7 +213,6 @@ impl JITCompiler {
                     )?;
                 }
                 ASTMathOperation::Divide => {
-                    // Check for division by zero at compile time if it's a constant
                     self.emit_instruction(
                         EncoderRequest::new64(Mnemonic::XOR)
                             .add_operand(Register::RDX)
@@ -255,15 +242,6 @@ impl JITCompiler {
             i += 2;
         }
 
-        // Restore stack pointer
-        if self.stack_offset > 0 {
-            self.emit_instruction(
-                EncoderRequest::new64(Mnemonic::ADD)
-                    .add_operand(Register::RSP)
-                    .add_operand(self.stack_offset as i64),
-            )?;
-        }
-
         // Generate function epilogue
         self.emit_instruction(EncoderRequest::new64(Mnemonic::POP).add_operand(Register::RBP))?;
         self.emit_instruction(EncoderRequest::new64(Mnemonic::RET))?;
@@ -280,18 +258,27 @@ impl JITCompiler {
     fn compile_math_variable_to_register(
         &mut self,
         variable: &ASTMathVariable,
-        _register: Register,
-    ) -> Result<Option<i64>, MageError> {
+        register: Register,
+    ) -> Result<(), MageError> {
         match variable {
             ASTMathVariable::Number(number) => {
-                // Return the constant value to be loaded
-                Ok(Some(self.parse_number(number)?))
+                // Load constant value into register
+                let value = self.parse_number(number)?;
+                self.emit_instruction(
+                    EncoderRequest::new64(Mnemonic::MOV)
+                        .add_operand(register)
+                        .add_operand(value),
+                )?;
             }
             ASTMathVariable::IdentifierChain(chain) => {
                 let var_name = self.identifier_chain_to_string(chain);
-                // For now, load from hashmap (stack loading will be implemented later)
-                let value = self.get_variable_value(&var_name)?;
-                Ok(Some(value))
+                // For now, load from our simulated stack memory
+                let value = self.get_variable_from_stack(&var_name)?;
+                self.emit_instruction(
+                    EncoderRequest::new64(Mnemonic::MOV)
+                        .add_operand(register)
+                        .add_operand(value),
+                )?;
             }
             ASTMathVariable::Math(nested_math) => {
                 // Save current code buffer state
@@ -303,8 +290,33 @@ impl JITCompiler {
                 // Restore code buffer state to avoid interference
                 self.code_buffer = saved_buffer;
 
-                Ok(Some(value))
+                // Load the computed value into register
+                self.emit_instruction(
+                    EncoderRequest::new64(Mnemonic::MOV)
+                        .add_operand(register)
+                        .add_operand(value),
+                )?;
             }
+        }
+        Ok(())
+    }
+
+    fn get_variable_from_stack(&self, name: &str) -> Result<i64, MageError> {
+        if let Some(&stack_offset) = self.variables.get(name) {
+            let stack_index = stack_offset as usize - 1;
+            if stack_index < self.stack_memory.len() {
+                Ok(self.stack_memory[stack_index])
+            } else {
+                Err(MageError::RuntimeError(format!(
+                    "Stack index out of bounds for variable: {}",
+                    name
+                )))
+            }
+        } else {
+            Err(MageError::RuntimeError(format!(
+                "Undefined variable: {}",
+                name
+            )))
         }
     }
 
@@ -377,13 +389,6 @@ impl JITCompiler {
             .join(".")
     }
 
-    fn get_variable_value(&self, name: &str) -> Result<i64, MageError> {
-        self.variable_values
-            .get(name)
-            .copied()
-            .ok_or_else(|| MageError::RuntimeError(format!("Undefined variable: {}", name)))
-    }
-
     pub fn parse_number(&self, number: &ASTNumber) -> Result<i64, MageError> {
         match number {
             ASTNumber::Zero => Ok(0),
@@ -409,5 +414,10 @@ impl JITCompiler {
                     .map_err(|e| MageError::ParseError(format!("Invalid hex number: {}", e)))
             }
         }
+    }
+
+    // Method to get variable value for testing purposes
+    pub fn get_variable_value(&self, name: &str) -> Option<i64> {
+        self.get_variable_from_stack(name).ok()
     }
 }
