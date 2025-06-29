@@ -105,9 +105,9 @@ fn flatify_statement(
 
     for child in node.children(&mut node.walk()) {
         match child.kind() {
-            "expression" => {}
-            "definition" => {}
             "identifier_chain" => {}
+            "definition" => {}
+            "expression" => {}
             _ => {
                 return Err(Error::ParseError(String::from(
                     "statement children nodes shoud be of type identifier_chain, definition or expression",
