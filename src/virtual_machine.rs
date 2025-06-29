@@ -331,7 +331,6 @@ impl VM {
 
     fn parse_string(&self, node: &Node, code: &str) -> Result<ASTNode, MageError> {
         let text = node.utf8_text(code.as_bytes()).unwrap();
-        // Remove surrounding quotes
         let value = text[1..text.len() - 1].to_string();
         Ok(ASTNode::String(ASTString { value }))
     }

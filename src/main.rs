@@ -3,7 +3,7 @@ use std::io::{self, BufRead};
 use tree_sitter::Parser;
 use tree_sitter_mage::LANGUAGE;
 
-use mage_rs::VM;
+use mage_rs::{VM, flatify_tree};
 
 fn main() {
     let mut parser = Parser::new();
@@ -16,7 +16,7 @@ fn main() {
     for line in stdin.lock().lines() {
         if let Ok(code) = line {
             let tree = parser.parse(code.as_str(), None).unwrap();
-            virtual_machine.run(&tree, code.as_str());
+            flatify_tree(tree, code.as_str()).unwrap();
         }
     }
 }
