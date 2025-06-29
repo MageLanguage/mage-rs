@@ -18,20 +18,21 @@ impl VM {
         })
     }
 
-    pub fn run(&mut self, tree: &Tree, code: &str) {
+    pub fn run(&mut self, tree: &Tree, code: &str) -> Result<(), MageError> {
         let root_node = tree.root_node();
-        match self.parse_node(&root_node, code) {
-            Ok(ast_node) => {
-                if let ASTNode::SourceFile(source_file) = ast_node {
-                    if let Err(e) = self.jit_compiler.compile_source_file(&source_file) {
-                        eprintln!("Compilation error: {:?}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Parse error: {:?}", e);
+
+        let root_node_parsed = match self.parse_node(&root_node, code) {
+            Ok(ast_node) => ast_node,
+            Err(error) => return Err(error),
+        };
+
+        if let ASTNode::SourceFile(source_file) = root_node_parsed {
+            if let Err(e) = self.jit_compiler.compile_source_file(&source_file) {
+                return Err(e);
             }
         }
+
+        Ok(())
     }
 
     pub fn parse_node(&self, node: &Node, code: &str) -> Result<ASTNode, MageError> {
@@ -90,8 +91,8 @@ impl VM {
 
         for child in node.children(&mut node.walk()) {
             if child.kind() == "statement" {
-                if let ASTNode::Statement(stmt) = self.parse_node(&child, code)? {
-                    statements.push(stmt);
+                if let ASTNode::Statement(satement) = self.parse_node(&child, code)? {
+                    statements.push(satement);
                 }
             }
         }

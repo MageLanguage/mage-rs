@@ -18,6 +18,7 @@ mod tests {
         let vm = VM::new().unwrap();
 
         let tree = parser.parse(code, None).unwrap();
+
         let root_node = tree.root_node();
 
         match vm.parse_node(&root_node, code) {
