@@ -98,12 +98,10 @@ fn flatify_statement(
     };
 
     for child in node.children(&mut node.walk()) {
-        let text = &code[child.start_byte()..child.end_byte()];
-
         match child.kind() {
             "definition" => {
                 let mut definition = FlatDefinition {
-                    name: String::from(""),
+                    name: "".to_string(),
                     operation: FlatDefinitionOperation::Constant,
                 };
 
@@ -114,7 +112,7 @@ fn flatify_statement(
                         "identifier_chain" => {
                             definition.name = text.to_string();
                         }
-                        "definition_type" => {
+                        "definition_operation" => {
                             if text == ":" {
                                 definition.operation = FlatDefinitionOperation::Constant
                             }
@@ -129,9 +127,20 @@ fn flatify_statement(
                 main_statement.definition = Some(definition);
             }
             "expression" => {
-                let expression = FlatExpression {
-                    content: text.to_string(),
+                let mut expression = FlatExpression {
+                    content: "".to_string(),
                 };
+
+                for child in child.children(&mut child.walk()) {
+                    let text = &code[child.start_byte()..child.end_byte()];
+
+                    match child.kind() {
+                        "number" => {
+                            expression.content = text.to_string();
+                        }
+                        _ => (),
+                    }
+                }
 
                 main_statement.expression = Some(expression);
             }
