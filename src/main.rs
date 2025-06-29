@@ -3,13 +3,11 @@ use std::io::{self, BufRead};
 use tree_sitter::Parser;
 use tree_sitter_mage::LANGUAGE;
 
-use mage_rs::{VM, flatify_tree};
+use mage_rs::flatify_tree;
 
 fn main() {
     let mut parser = Parser::new();
     parser.set_language(&LANGUAGE.into()).unwrap();
-
-    let mut virtual_machine = VM::new().unwrap();
 
     let stdin = io::stdin();
 
