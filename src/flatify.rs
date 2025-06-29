@@ -25,12 +25,14 @@ impl FlatStatementChain {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FlatStatement {
     definition: Option<FlatDefinition>,
     expression: Option<FlatExpression>,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FlatDefinition {
     name: String,
     operation: FlatDefinitionOperation,
@@ -43,8 +45,9 @@ pub enum FlatDefinitionOperation {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FlatExpression {
-    //
+    content: String,
 }
 
 pub fn flatify_tree(tree: Tree, code: &str) -> Result<(), Error> {
@@ -52,25 +55,20 @@ pub fn flatify_tree(tree: Tree, code: &str) -> Result<(), Error> {
 }
 
 pub fn flatify_node(node: Node, code: &str) -> Result<(), Error> {
-    let kind = node.kind();
-
-    if kind != "source_file" && kind != "source" {
-        return Err(Error::ParseError(String::from(
-            "node kind should be of type source_file or source".to_string(),
-        )));
-    }
-
     let mut root = FlatRoot {
         statement_chains: Vec::new(),
     };
 
-    for child in node.children(&mut node.walk()) {
-        if child.kind() == "statement_chain" {
-            flatify_statement_chain(child, &mut root, code)?;
+    if node.kind() == "source_file" || node.kind() == "source" {
+        for child in node.children(&mut node.walk()) {
+            if child.kind() == "statement_chain" {
+                flatify_statement_chain(child, &mut root, code)?;
+            }
         }
     }
 
     println!("{:#?}", root);
+
     Ok(())
 }
 
@@ -80,13 +78,9 @@ fn flatify_statement_chain(node: Node, root: &mut FlatRoot, code: &str) -> Resul
     };
 
     for child in node.children(&mut node.walk()) {
-        if child.kind() != "statement" {
-            return Err(Error::ParseError(String::from(
-                "statement_chain children nodes shoud be of type statement",
-            )));
+        if child.kind() == "statement" {
+            flatify_statement(child, &mut statement_chain, code)?
         }
-
-        flatify_statement(child, &mut statement_chain, code)?;
     }
 
     root.push_statement_chain(statement_chain);
@@ -98,23 +92,53 @@ fn flatify_statement(
     statement_chain: &mut FlatStatementChain,
     code: &str,
 ) -> Result<(), Error> {
-    let mut statement = FlatStatement {
+    let mut main_statement = FlatStatement {
         definition: None,
         expression: None,
     };
 
     for child in node.children(&mut node.walk()) {
+        let text = &code[child.start_byte()..child.end_byte()];
+
         match child.kind() {
-            "identifier_chain" => {}
-            "definition" => {}
-            "expression" => {}
-            _ => {
-                return Err(Error::ParseError(String::from(
-                    "statement children nodes shoud be of type identifier_chain, definition or expression",
-                )));
+            "definition" => {
+                let mut definition = FlatDefinition {
+                    name: String::from(""),
+                    operation: FlatDefinitionOperation::Constant,
+                };
+
+                for child in child.children(&mut child.walk()) {
+                    let text = &code[child.start_byte()..child.end_byte()];
+
+                    match child.kind() {
+                        "identifier_chain" => {
+                            definition.name = text.to_string();
+                        }
+                        "definition_type" => {
+                            if text == ":" {
+                                definition.operation = FlatDefinitionOperation::Constant
+                            }
+                            if text == "=" {
+                                definition.operation = FlatDefinitionOperation::Variable
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+
+                main_statement.definition = Some(definition);
             }
+            "expression" => {
+                let expression = FlatExpression {
+                    content: text.to_string(),
+                };
+
+                main_statement.expression = Some(expression);
+            }
+            _ => (),
         }
     }
 
+    statement_chain.push_statement(main_statement);
     Ok(())
 }
