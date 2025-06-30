@@ -247,7 +247,7 @@ fn process_expression_section(
     // For the first section, there should be no operators, just return the operand
     if operators.is_empty() {
         return operand.ok_or_else(|| {
-            Error::ParseError("No operand found in expression section".to_string())
+            Error::FlattenError("No operand found in expression section".to_string())
         });
     }
 
@@ -429,7 +429,7 @@ fn process_variable(
         }
     }
 
-    Err(Error::ParseError("Unknown variable type".to_string()))
+    Err(Error::FlattenError("Unknown variable type".to_string()))
 }
 
 // Process multiple expression parts into binary operations

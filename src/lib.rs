@@ -6,5 +6,5 @@ mod flatten_tests;
 
 #[derive(Debug)]
 pub enum Error {
-    ParseError(String),
+    FlattenError(String),
 }
