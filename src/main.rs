@@ -2,7 +2,7 @@ use std::io::{self, BufRead};
 
 use clap::Parser as CLAParser;
 
-use tree_sitter::Parser as TreeSitterParser;
+use tree_sitter::{Language as TreeSitterLanguage, Parser as TreeSitterParser};
 use tree_sitter_mage::LANGUAGE;
 
 use serde::Serialize;
@@ -27,7 +27,9 @@ fn main() {
     let Arguments { output } = Arguments::parse();
 
     let mut parser = TreeSitterParser::new();
-    parser.set_language(&LANGUAGE.into()).unwrap();
+    parser
+        .set_language(&TreeSitterLanguage::from(LANGUAGE))
+        .unwrap();
 
     let stdin = io::stdin();
 

@@ -1,8 +1,47 @@
-use tree_sitter::{Node, Tree};
-
 use serde::Serialize;
 
+use tree_sitter::{Language, Node, Tree};
+
 use crate::Error;
+
+fn get_node_kind_ids() -> NodeKindIDs {
+    let language = Language::from(tree_sitter_mage::LANGUAGE);
+
+    NodeKindIDs {
+        source_file: language.id_for_node_kind("source_file", true),
+        source: language.id_for_node_kind("source", true),
+        statement_chain: language.id_for_node_kind("statement_chain", true),
+        statement: language.id_for_node_kind("statement", true),
+        definition: language.id_for_node_kind("definition", true),
+        expression: language.id_for_node_kind("expression", true),
+        identifier_chain: language.id_for_node_kind("identifier_chain", true),
+        definition_operation: language.id_for_node_kind("definition_operation", true),
+        arithmetic: language.id_for_node_kind("arithmetic", true),
+        variable: language.id_for_node_kind("variable", true),
+        number: language.id_for_node_kind("number", true),
+        string: language.id_for_node_kind("string", true),
+        prioritize: language.id_for_node_kind("prioritize", true),
+        expression_section: language.id_for_node_kind("expression_section", true),
+    }
+}
+
+// Struct to hold all node kind IDs
+struct NodeKindIDs {
+    source_file: u16,
+    source: u16,
+    statement_chain: u16,
+    statement: u16,
+    definition: u16,
+    expression: u16,
+    identifier_chain: u16,
+    definition_operation: u16,
+    arithmetic: u16,
+    variable: u16,
+    number: u16,
+    string: u16,
+    prioritize: u16,
+    expression_section: u16,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FlatRoot {
@@ -63,18 +102,19 @@ pub enum FlatExpressionSection {
 }
 
 pub fn flatten_tree(tree: Tree, code: &str) -> Result<FlatRoot, Error> {
-    flatten_node(tree.root_node(), code)
+    let kinds = get_node_kind_ids();
+    flatten_node(tree.root_node(), code, &kinds)
 }
 
-pub fn flatten_node(node: Node, code: &str) -> Result<FlatRoot, Error> {
+fn flatten_node(node: Node, code: &str, node_kind_ids: &NodeKindIDs) -> Result<FlatRoot, Error> {
     let mut root = FlatRoot {
         statement_chains: Vec::new(),
     };
 
-    if node.kind() == "source_file" || node.kind() == "source" {
+    if node.kind_id() == node_kind_ids.source_file || node.kind_id() == node_kind_ids.source {
         for child in node.children(&mut node.walk()) {
-            if child.kind() == "statement_chain" {
-                flatten_statement_chain(child, code, &mut root)?;
+            if child.kind_id() == node_kind_ids.statement_chain {
+                flatten_statement_chain(child, code, &mut root, node_kind_ids)?;
             }
         }
     }
@@ -82,14 +122,19 @@ pub fn flatten_node(node: Node, code: &str) -> Result<FlatRoot, Error> {
     Ok(root)
 }
 
-fn flatten_statement_chain(node: Node, code: &str, root: &mut FlatRoot) -> Result<(), Error> {
+fn flatten_statement_chain(
+    node: Node,
+    code: &str,
+    root: &mut FlatRoot,
+    node_kind_ids: &NodeKindIDs,
+) -> Result<(), Error> {
     let mut statement_chain = FlatStatementChain {
         statements: Vec::new(),
     };
 
     for child in node.children(&mut node.walk()) {
-        if child.kind() == "statement" {
-            flatten_statement(child, code, &mut statement_chain)?
+        if child.kind_id() == node_kind_ids.statement {
+            flatten_statement(child, code, &mut statement_chain, node_kind_ids)?
         }
     }
 
@@ -101,6 +146,7 @@ fn flatten_statement(
     node: Node,
     code: &str,
     statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
 ) -> Result<(), Error> {
     let mut statement = FlatStatement {
         definition: None,
@@ -108,9 +154,13 @@ fn flatten_statement(
     };
 
     for child in node.children(&mut node.walk()) {
-        match child.kind() {
-            "definition" => flatten_definition(child, code, statement_chain, &mut statement)?,
-            "expression" => flatten_expression(child, code, statement_chain, &mut statement)?,
+        match child.kind_id() {
+            id if id == node_kind_ids.definition => {
+                flatten_definition(child, code, statement_chain, &mut statement, node_kind_ids)?
+            }
+            id if id == node_kind_ids.expression => {
+                flatten_expression(child, code, statement_chain, &mut statement, node_kind_ids)?
+            }
             _ => (),
         }
     }
@@ -124,6 +174,7 @@ fn flatten_definition(
     code: &str,
     _statement_chain: &mut FlatStatementChain,
     statement: &mut FlatStatement,
+    node_kind_ids: &NodeKindIDs,
 ) -> Result<(), Error> {
     let mut definition = FlatDefinition {
         name: "".to_string(),
@@ -133,11 +184,11 @@ fn flatten_definition(
     for child in node.children(&mut node.walk()) {
         let text = &code[child.start_byte()..child.end_byte()];
 
-        match child.kind() {
-            "identifier_chain" => {
+        match child.kind_id() {
+            id if id == node_kind_ids.identifier_chain => {
                 definition.name = text.to_string();
             }
-            "definition_operation" => {
+            id if id == node_kind_ids.definition_operation => {
                 if text == ":" {
                     definition.operation = FlatDefinitionOperation::Constant
                 }
@@ -158,6 +209,7 @@ fn flatten_expression(
     code: &str,
     statement_chain: &mut FlatStatementChain,
     statement: &mut FlatStatement,
+    node_kind_ids: &NodeKindIDs,
 ) -> Result<(), Error> {
     let name = if let Some(ref definition) = statement.definition {
         definition.name.clone()
@@ -176,6 +228,7 @@ fn flatten_expression(
         &name,
         &mut temporary_counter,
         statement_chain,
+        node_kind_ids,
     )?;
 
     // Process the expression parts to create binary operations
@@ -184,6 +237,7 @@ fn flatten_expression(
         &name,
         &mut temporary_counter,
         statement_chain,
+        node_kind_ids,
     )?;
 
     statement.expression = Some(flattened_expr);
@@ -198,15 +252,17 @@ fn collect_expression_sections(
     base_name: &str,
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
 ) -> Result<(), Error> {
     for child in node.children(&mut node.walk()) {
-        if child.kind() == "expression_section" {
+        if child.kind_id() == node_kind_ids.expression_section {
             let expr_part = process_expression_section(
                 child,
                 code,
                 base_name,
                 temporary_counter,
                 statement_chain,
+                node_kind_ids,
             )?;
             parts.push(expr_part);
         }
@@ -221,23 +277,25 @@ fn process_expression_section(
     base_name: &str,
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
 ) -> Result<FlatExpression, Error> {
     let mut operators = Vec::new();
     let mut operand = None;
 
     for child in node.children(&mut node.walk()) {
-        match child.kind() {
-            "arithmetic" => {
+        match child.kind_id() {
+            id if id == node_kind_ids.arithmetic => {
                 let op_text = &code[child.start_byte()..child.end_byte()];
                 operators.push(op_text.to_string());
             }
-            "variable" => {
+            id if id == node_kind_ids.variable => {
                 operand = Some(process_variable(
                     child,
                     code,
                     base_name,
                     temporary_counter,
                     statement_chain,
+                    node_kind_ids,
                 )?);
             }
             _ => {}
@@ -368,29 +426,30 @@ fn process_variable(
     base_name: &str,
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
 ) -> Result<FlatExpression, Error> {
     for child in node.children(&mut node.walk()) {
-        match child.kind() {
-            "number" => {
+        match child.kind_id() {
+            id if id == node_kind_ids.number => {
                 let number_text = &code[child.start_byte()..child.end_byte()];
                 return Ok(FlatExpression::Number(number_text.to_string()));
             }
-            "identifier_chain" => {
+            id if id == node_kind_ids.identifier_chain => {
                 let id_text = &code[child.start_byte()..child.end_byte()];
                 return Ok(FlatExpression::Identifier(id_text.to_string()));
             }
-            "string" => {
+            id if id == node_kind_ids.string => {
                 let string_text = &code[child.start_byte()..child.end_byte()];
                 return Ok(FlatExpression::String(string_text.to_string()));
             }
-            "prioritize" => {
+            id if id == node_kind_ids.prioritize => {
                 // Always extract prioritized expressions into intermediate variables
                 let temporary_name = format!("{}_{}", base_name, temporary_counter);
                 *temporary_counter += 1;
 
                 // Process the inner expression
                 for inner_child in child.children(&mut child.walk()) {
-                    if inner_child.kind() == "expression" {
+                    if inner_child.kind_id() == node_kind_ids.expression {
                         let mut inner_parts = Vec::new();
                         collect_expression_sections(
                             inner_child,
@@ -399,6 +458,7 @@ fn process_variable(
                             base_name,
                             temporary_counter,
                             statement_chain,
+                            node_kind_ids,
                         )?;
 
                         let flattened_inner = if inner_parts.len() == 1 {
@@ -409,6 +469,7 @@ fn process_variable(
                                 base_name,
                                 temporary_counter,
                                 statement_chain,
+                                node_kind_ids,
                             )?
                         };
 
@@ -438,6 +499,7 @@ fn process_expression_parts(
     base_name: &str,
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
+    _kinds: &NodeKindIDs,
 ) -> Result<FlatExpression, Error> {
     if parts.len() < 2 {
         let single_part = parts.into_iter().next().unwrap();
