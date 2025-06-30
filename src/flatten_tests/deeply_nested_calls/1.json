@@ -1,0 +1,16 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "test", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "a(b(c(d(e(f())))))" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}

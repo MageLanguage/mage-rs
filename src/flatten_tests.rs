@@ -135,3 +135,84 @@ fn test_expression_with_identifier_chain_with_calls_with_arguments() -> Result<(
 
     Ok(())
 }
+
+#[test]
+fn test_empty_expressions() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/empty_expressions", 2) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_unflattened_function_arguments() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/unflattened_function_arguments", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_division_by_zero() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/division_by_zero", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_multiple_statement_chains() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/multiple_statement_chains", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_invalid_number_formats() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/invalid_number_formats", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_inconsistent_call_extraction() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/inconsistent_call_extraction", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_malformed_syntax() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/malformed_syntax", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_deeply_nested_calls() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/deeply_nested_calls", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_mixed_number_formats() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/mixed_number_formats", 1) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}

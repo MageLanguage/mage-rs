@@ -1,0 +1,56 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "test1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d10" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d20" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        },
+        {
+            "statements": [
+                {
+                    "definition": { "name": "inner1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d30" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "inner2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d40" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        },
+        {
+            "statements": [
+                {
+                    "definition": { "name": "test3", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d50" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}

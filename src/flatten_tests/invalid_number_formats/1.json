@@ -1,0 +1,64 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "test_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0dABC" },
+                        "two": { "Number": "0xGHI" },
+                        "arithmetic": "Multiply"
+                    }
+                },
+                {
+                    "definition": { "name": "test_2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "test_1" },
+                        "two": { "Number": "0y456" },
+                        "arithmetic": "Divide"
+                    }
+                },
+                {
+                    "definition": { "name": "test_3", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0b123" },
+                        "two": { "Number": "0o89" },
+                        "arithmetic": "Add"
+                    }
+                },
+                {
+                    "definition": { "name": "test_4", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "test_3" },
+                        "two": { "Identifier": "test_2" },
+                        "arithmetic": "Substract"
+                    }
+                },
+                {
+                    "definition": { "name": "test_5", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "test_4" },
+                        "two": { "Number": "0b" },
+                        "arithmetic": "Modulo"
+                    }
+                },
+                {
+                    "definition": { "name": "test_6", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "test_5" },
+                        "two": { "Number": "0x" },
+                        "arithmetic": "Add"
+                    }
+                },
+                {
+                    "definition": { "name": "test", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "test_6" },
+                        "two": { "Number": "0d" },
+                        "arithmetic": "Substract"
+                    }
+                }
+            ]
+        }
+    ]
+}

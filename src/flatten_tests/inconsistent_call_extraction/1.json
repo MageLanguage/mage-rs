@@ -1,0 +1,64 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "test1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "func()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "func" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test3_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "obj.method()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test3", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "test3_1" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test4", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "obj.method" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test5_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "a.b()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test5", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "test5_1.c.d()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}
