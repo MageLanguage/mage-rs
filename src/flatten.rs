@@ -197,21 +197,21 @@ fn flatten_expression(
                     temporary_counter += 1;
 
                     // Create the intermediate expression
-                    let temp_expr = format!(
+                    let temporary_expression = format!(
                         "{} {} {}",
                         processed_tokens[i],
                         processed_tokens[i + 1],
                         processed_tokens[i + 2]
                     );
 
-                    let temp_statement = FlatStatement {
+                    let temporary_statement = FlatStatement {
                         definition: Some(FlatDefinition {
                             name: temporary_name.clone(),
                             operation: FlatDefinitionOperation::Constant,
                         }),
-                        expression: Some(FlatExpression::String(temp_expr)),
+                        expression: Some(FlatExpression::String(temporary_expression)),
                     };
-                    statement_chain.push_statement(temp_statement);
+                    statement_chain.push_statement(temporary_statement);
 
                     // Replace the three tokens with the temp variable name
                     new_tokens.push(temporary_name);
@@ -241,19 +241,19 @@ fn flatten_expression(
         temporary_counter += 1;
 
         // Create intermediate expression: first_operand operator second_operand
-        let temp_expr = format!(
+        let temporary_expression = format!(
             "{} {} {}",
             processed_tokens[0], processed_tokens[1], processed_tokens[2]
         );
 
-        let temp_statement = FlatStatement {
+        let temporary_statement = FlatStatement {
             definition: Some(FlatDefinition {
                 name: temporary_name.clone(),
                 operation: FlatDefinitionOperation::Constant,
             }),
-            expression: Some(FlatExpression::String(temp_expr)),
+            expression: Some(FlatExpression::String(temporary_expression)),
         };
-        statement_chain.push_statement(temp_statement);
+        statement_chain.push_statement(temporary_statement);
 
         // Replace first three tokens with the temp variable
         let mut new_tokens = vec![temporary_name];
@@ -290,7 +290,7 @@ fn collect_expression_tokens(
             }
             "prioritize" => {
                 // Always extract prioritized expressions into intermediate variables
-                let temp_name = format!("{}_{}", base_name, temporary_counter);
+                let temporary_name = format!("{}_{}", base_name, temporary_counter);
                 *temporary_counter += 1;
 
                 // Recursively flatten the prioritized expression
@@ -310,18 +310,18 @@ fn collect_expression_tokens(
                 }
 
                 // Create intermediate statement for the prioritized expression
-                let temp_expr = inner_tokens.join(" ");
-                let temp_statement = FlatStatement {
+                let temporary_expression = inner_tokens.join(" ");
+                let temporary_statement = FlatStatement {
                     definition: Some(FlatDefinition {
-                        name: temp_name.clone(),
+                        name: temporary_name.clone(),
                         operation: FlatDefinitionOperation::Constant,
                     }),
-                    expression: Some(FlatExpression::String(temp_expr)),
+                    expression: Some(FlatExpression::String(temporary_expression)),
                 };
-                statement_chain.push_statement(temp_statement);
+                statement_chain.push_statement(temporary_statement);
 
                 // Use the temp variable name in place of the prioritized expression
-                tokens.push(temp_name);
+                tokens.push(temporary_name);
             }
             _ => {
                 // Handle other expression types if needed
