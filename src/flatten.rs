@@ -1,8 +1,10 @@
 use tree_sitter::{Node, Tree};
 
+use serde::Serialize;
+
 use crate::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FlatRoot {
     statement_chains: Vec<FlatStatementChain>,
 }
@@ -13,7 +15,7 @@ impl FlatRoot {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FlatStatementChain {
     statements: Vec<FlatStatement>,
 }
@@ -24,28 +26,25 @@ impl FlatStatementChain {
     }
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FlatStatement {
     definition: Option<FlatDefinition>,
     expression: Option<FlatExpression>,
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FlatDefinition {
     name: String,
     operation: FlatDefinitionOperation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum FlatDefinitionOperation {
     Constant,
     Variable,
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
 pub enum FlatExpression {
     Number(String),
     String(String),
@@ -57,18 +56,17 @@ pub enum FlatExpression {
     },
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
 pub enum FlatExpressionSection {
     Number(String),
     String(String),
 }
 
-pub fn flatten_tree(tree: Tree, code: &str) -> Result<(), Error> {
+pub fn flatten_tree(tree: Tree, code: &str) -> Result<FlatRoot, Error> {
     flatten_node(tree.root_node(), code)
 }
 
-pub fn flatten_node(node: Node, code: &str) -> Result<(), Error> {
+pub fn flatten_node(node: Node, code: &str) -> Result<FlatRoot, Error> {
     let mut root = FlatRoot {
         statement_chains: Vec::new(),
     };
@@ -81,9 +79,7 @@ pub fn flatten_node(node: Node, code: &str) -> Result<(), Error> {
         }
     }
 
-    println!("{:#?}", root);
-
-    Ok(())
+    Ok(root)
 }
 
 fn flatten_statement_chain(node: Node, code: &str, root: &mut FlatRoot) -> Result<(), Error> {

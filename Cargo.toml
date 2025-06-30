@@ -9,3 +9,11 @@ tree-sitter-mage = { version = "0.0.8" }
 zydis = { version = "4.1.1", features = ["encoder", "serialization"] }
 mmap-rs = { version = "0.6.1" }
 hashbrown = { version = "0.15.4", features = ["nightly", "serde"] }
+serde = { version = "1.0.219", features = [
+    "alloc",
+    "derive",
+    "rc",
+    "unstable",
+] }
+serde_json = { version = "1.0.132" }
+clap = { version = "4.5.40", features = ["derive", "string"] }
