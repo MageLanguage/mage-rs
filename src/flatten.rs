@@ -255,12 +255,106 @@ fn process_expression_section(
         });
     }
 
-    // For subsequent sections, we have operators followed by operand
-    // For now, we'll represent this as a string until we process it into binary operations
-    let operand_str = match operand.unwrap() {
-        FlatExpression::Number(n) => n,
-        FlatExpression::String(s) => s,
-        FlatExpression::Identifier(i) => i,
+    // Handle multiple operators by creating intermediate variables for unary parts
+    if operators.len() > 1 {
+        // Extract the unary part (all operators except the first + operand)
+        let unary_operators: Vec<String> = operators.iter().skip(1).cloned().collect();
+        let operand_unwrapped = operand.unwrap();
+
+        // Create intermediate variable for the unary expression
+        let temporary_name = format!("{}_{}", base_name, temporary_counter);
+        *temporary_counter += 1;
+
+        // Process the unary part as a binary operation with implicit zero
+        let unary_expr = if unary_operators.len() == 1 {
+            // Single unary operator: create "0 operator operand"
+            let operand_str = expression_to_string(&operand_unwrapped);
+            FlatExpression::BinaryOperation {
+                left: "0".to_string(),
+                operator: unary_operators[0].clone(),
+                right: operand_str,
+            }
+        } else {
+            // Multiple unary operators: process them recursively from right to left
+            let operand_str = expression_to_string(&operand_unwrapped);
+            let mut current_operand = operand_str;
+
+            // Process all operators except the last one as intermediate statements
+            let operators_rev: Vec<&String> = unary_operators.iter().rev().collect();
+            for (i, operator) in operators_rev.iter().enumerate() {
+                if i == operators_rev.len() - 1 {
+                    // Last operator: return as direct binary operation
+                    break;
+                }
+
+                let temp_name = format!("{}_{}", base_name, temporary_counter);
+                *temporary_counter += 1;
+
+                let temp_statement = FlatStatement {
+                    definition: Some(FlatDefinition {
+                        name: temp_name.clone(),
+                        operation: FlatDefinitionOperation::Constant,
+                    }),
+                    expression: Some(FlatExpression::BinaryOperation {
+                        left: "0".to_string(),
+                        operator: (*operator).clone(),
+                        right: current_operand,
+                    }),
+                };
+                statement_chain.push_statement(temp_statement);
+                current_operand = temp_name;
+            }
+
+            // Return the final operation as a direct binary operation
+            FlatExpression::BinaryOperation {
+                left: "0".to_string(),
+                operator: (**operators_rev.last().unwrap()).clone(),
+                right: current_operand,
+            }
+        };
+
+        let temporary_statement = FlatStatement {
+            definition: Some(FlatDefinition {
+                name: temporary_name.clone(),
+                operation: FlatDefinitionOperation::Constant,
+            }),
+            expression: Some(unary_expr),
+        };
+        statement_chain.push_statement(temporary_statement);
+
+        // Return the first operator with the temporary variable
+        Ok(FlatExpression::String(format!(
+            "{} {}",
+            operators[0], temporary_name
+        )))
+    } else {
+        // Single operator case - return as before
+        let operand_str = match operand.unwrap() {
+            FlatExpression::Number(n) => n,
+            FlatExpression::String(s) => s,
+            FlatExpression::Identifier(i) => i,
+            FlatExpression::BinaryOperation {
+                left,
+                operator,
+                right,
+            } => {
+                format!("{} {} {}", left, operator, right)
+            }
+        };
+
+        Ok(FlatExpression::String(format!(
+            "{} {}",
+            operators[0], operand_str
+        )))
+    }
+}
+
+// Helper function to convert FlatExpression to string (moved up for use in process_expression_section)
+fn expression_to_string(expr: &FlatExpression) -> String {
+    match expr {
+        FlatExpression::Number(n) => n.clone(),
+        FlatExpression::String(s) => s.clone(),
+        FlatExpression::Identifier(i) => i.clone(),
         FlatExpression::BinaryOperation {
             left,
             operator,
@@ -268,13 +362,7 @@ fn process_expression_section(
         } => {
             format!("{} {} {}", left, operator, right)
         }
-    };
-
-    Ok(FlatExpression::String(format!(
-        "{} {}",
-        operators.join(" "),
-        operand_str
-    )))
+    }
 }
 
 // Process a variable node (number, identifier_chain, prioritize, etc.)
@@ -483,20 +571,6 @@ fn process_expression_parts(
 }
 
 // Helper functions
-fn expression_to_string(expr: &FlatExpression) -> String {
-    match expr {
-        FlatExpression::Number(n) => n.clone(),
-        FlatExpression::String(s) => s.clone(),
-        FlatExpression::Identifier(i) => i.clone(),
-        FlatExpression::BinaryOperation {
-            left,
-            operator,
-            right,
-        } => {
-            format!("{} {} {}", left, operator, right)
-        }
-    }
-}
 
 fn find_high_precedence_operation(operators: &[String]) -> Option<usize> {
     operators.iter().position(|op| op == "*" || op == "/")

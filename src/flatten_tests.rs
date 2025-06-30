@@ -70,6 +70,27 @@ mod flatten_tests {
     }
 
     #[test]
+    fn test_definition_expression_with_multiple_arithmetic() {
+        let test_cases = [
+            "x : 0d10 + - 0d5;",        // Addition with unary minus
+            "y : 0d10 - - 0d5;",        // Subtraction with unary minus
+            "z : 0d10 * + 0d5;",        // Multiplication with unary plus
+            "a : 0d10 / - 0d5;",        // Division with unary minus
+            "b : 0d1 + + + 0d2;",       // Multiple unary plus operators
+            "c : 0d1 - - - 0d2;",       // Multiple unary minus operators
+            "d : 0d1 + - + 0d2;",       // Mixed unary operators
+            "e : 0d1 * - - 0d2;",       // High precedence with double minus
+            "f : 0d1 + - 0d2 * 0d3;",   // Multiple operators with precedence
+            "g : 0d1 + - [0d2 + 0d3];", // Multiple operators with prioritize
+            "h : [0d1 + 0d2] * - 0d3;", // Prioritize with multiple operators
+        ];
+
+        for code in test_cases {
+            setup(code).unwrap();
+        }
+    }
+
+    #[test]
     fn test_definition_expression_with_leading_zero_omitted() {
         let test_cases = [
             "x : - 0d1;",                   // Simple unary minus
