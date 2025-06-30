@@ -416,7 +416,7 @@ fn process_expression_parts(
     }
 
     // Process remaining operations left to right
-    while operators.len() > 0 {
+    while operators.len() > 1 {
         let temporary_name = format!("{}_{}", base_name, temporary_counter);
         *temporary_counter += 1;
 
@@ -442,7 +442,20 @@ fn process_expression_parts(
         operators.remove(0);
     }
 
-    Ok(FlatExpression::Identifier(operands[0].clone()))
+    // For the final operation, return BinaryOperation directly instead of creating temporary
+    if operators.len() == 1 {
+        let left = operands[0].clone();
+        let operator = operators[0].clone();
+        let right = operands[1].clone();
+
+        Ok(FlatExpression::BinaryOperation {
+            left,
+            operator,
+            right,
+        })
+    } else {
+        Ok(FlatExpression::Identifier(operands[0].clone()))
+    }
 }
 
 // Helper functions
