@@ -1,0 +1,24 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "z_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d20" },
+                        "two": { "Number": "0d4" },
+                        "arithmetic": "Divide"
+                    }
+                },
+                {
+                    "definition": { "name": "z", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d100" },
+                        "two": { "Identifier": "z_1" },
+                        "arithmetic": "Add"
+                    }
+                }
+            ]
+        }
+    ]
+}

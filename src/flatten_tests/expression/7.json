@@ -1,0 +1,19 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": {
+                        "name": "message",
+                        "operation": "Constant"
+                    },
+                    "expression": {
+                        "one": { "String": "\"hello world\"" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}

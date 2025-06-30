@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use tree_sitter::{Language, Node, Tree};
 
@@ -43,9 +43,9 @@ struct NodeKindIDs {
     expression_section: u16,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatRoot {
-    statement_chains: Vec<FlatStatementChain>,
+    pub statement_chains: Vec<FlatStatementChain>,
 }
 
 impl FlatRoot {
@@ -54,9 +54,9 @@ impl FlatRoot {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatStatementChain {
-    statements: Vec<FlatStatement>,
+    pub statements: Vec<FlatStatement>,
 }
 
 impl FlatStatementChain {
@@ -65,40 +65,127 @@ impl FlatStatementChain {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatStatement {
-    definition: Option<FlatDefinition>,
-    expression: Option<FlatExpression>,
+    pub definition: Option<FlatDefinition>,
+    pub expression: Option<FlatExpression>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatDefinition {
-    name: String,
-    operation: FlatDefinitionOperation,
+    pub name: String,
+    pub operation: FlatDefinitionOperation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatDefinitionOperation {
     Constant,
     Variable,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub enum FlatExpression {
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum FlatArithmetic {
+    Add,
+    Substract,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum FlatVariable {
     Number(String),
     String(String),
     Identifier(String),
-    BinaryOperation {
-        left: String,
-        operator: String,
-        right: String,
-    },
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub enum FlatExpressionSection {
-    Number(String),
-    String(String),
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatExpression {
+    pub one: FlatVariable,
+    pub two: Option<FlatVariable>,
+    pub arithmetic: Option<FlatArithmetic>,
+}
+
+// Helper function to convert string operator to FlatArithmetic
+fn string_to_arithmetic(op: &str) -> Option<FlatArithmetic> {
+    match op {
+        "+" => Some(FlatArithmetic::Add),
+        "-" => Some(FlatArithmetic::Substract),
+        "*" => Some(FlatArithmetic::Multiply),
+        "/" => Some(FlatArithmetic::Divide),
+        "%" => Some(FlatArithmetic::Modulo),
+        _ => None,
+    }
+}
+
+// Helper function to create a simple variable expression
+fn create_variable_expression(variable: FlatVariable) -> FlatExpression {
+    FlatExpression {
+        one: variable,
+        two: None,
+        arithmetic: None,
+    }
+}
+
+// Helper function to create a binary expression
+fn create_binary_expression(
+    left: FlatVariable,
+    op: FlatArithmetic,
+    right: FlatVariable,
+) -> FlatExpression {
+    FlatExpression {
+        one: left,
+        two: Some(right),
+        arithmetic: Some(op),
+    }
+}
+
+// Helper function to convert string to FlatVariable
+fn string_to_variable(s: &str) -> FlatVariable {
+    // Check if it's a number (starts with digit or 0x/0b/0o/0d)
+    if s.chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+        || s.starts_with("0")
+    {
+        FlatVariable::Number(s.to_string())
+    } else if s.starts_with('"') && s.ends_with('"') {
+        FlatVariable::String(s.to_string())
+    } else {
+        FlatVariable::Identifier(s.to_string())
+    }
+}
+
+// Helper function to convert FlatVariable to string
+fn variable_to_string(var: &FlatVariable) -> String {
+    match var {
+        FlatVariable::Number(n) => n.clone(),
+        FlatVariable::String(s) => s.clone(),
+        FlatVariable::Identifier(i) => i.clone(),
+    }
+}
+
+// Helper function to convert FlatExpression to string
+fn expression_to_string_simple(expr: &FlatExpression) -> String {
+    match (&expr.two, &expr.arithmetic) {
+        (Some(right), Some(op)) => {
+            let op_str = match op {
+                FlatArithmetic::Add => "+",
+                FlatArithmetic::Substract => "-",
+                FlatArithmetic::Multiply => "*",
+                FlatArithmetic::Divide => "/",
+                FlatArithmetic::Modulo => "%",
+            };
+            format!(
+                "{} {} {}",
+                variable_to_string(&expr.one),
+                op_str,
+                variable_to_string(right)
+            )
+        }
+        _ => variable_to_string(&expr.one),
+    }
 }
 
 pub fn flatten_tree(tree: Tree, code: &str) -> Result<FlatRoot, Error> {
@@ -323,10 +410,17 @@ fn process_expression_section(
         let unary_expr = if unary_operators.len() == 1 {
             // Single unary operator: create "0 operator operand"
             let operand_str = expression_to_string(&operand_unwrapped);
-            FlatExpression::BinaryOperation {
-                left: "0".to_string(),
-                operator: unary_operators[0].clone(),
-                right: operand_str,
+            if let Some(op) = string_to_arithmetic(&unary_operators[0]) {
+                create_binary_expression(
+                    FlatVariable::Number("0".to_string()),
+                    op,
+                    string_to_variable(&operand_str),
+                )
+            } else {
+                return Err(Error::FlattenError(format!(
+                    "Unknown operator: {}",
+                    unary_operators[0]
+                )));
             }
         } else {
             // Multiple unary operators: process them recursively from right to left
@@ -349,10 +443,17 @@ fn process_expression_section(
                         name: temp_name.clone(),
                         operation: FlatDefinitionOperation::Constant,
                     }),
-                    expression: Some(FlatExpression::BinaryOperation {
-                        left: "0".to_string(),
-                        operator: (*operator).clone(),
-                        right: current_operand,
+                    expression: Some(if let Some(op) = string_to_arithmetic(operator) {
+                        create_binary_expression(
+                            FlatVariable::Number("0".to_string()),
+                            op,
+                            string_to_variable(&current_operand),
+                        )
+                    } else {
+                        return Err(Error::FlattenError(format!(
+                            "Unknown operator: {}",
+                            operator
+                        )));
                     }),
                 };
                 statement_chain.push_statement(temp_statement);
@@ -360,10 +461,17 @@ fn process_expression_section(
             }
 
             // Return the final operation as a direct binary operation
-            FlatExpression::BinaryOperation {
-                left: "0".to_string(),
-                operator: (**operators_rev.last().unwrap()).clone(),
-                right: current_operand,
+            if let Some(op) = string_to_arithmetic(operators_rev.last().unwrap()) {
+                create_binary_expression(
+                    FlatVariable::Number("0".to_string()),
+                    op,
+                    string_to_variable(&current_operand),
+                )
+            } else {
+                return Err(Error::FlattenError(format!(
+                    "Unknown operator: {}",
+                    operators_rev.last().unwrap()
+                )));
             }
         };
 
@@ -377,46 +485,24 @@ fn process_expression_section(
         statement_chain.push_statement(temporary_statement);
 
         // Return the first operator with the temporary variable
-        Ok(FlatExpression::String(format!(
+        Ok(create_variable_expression(FlatVariable::String(format!(
             "{} {}",
             operators[0], temporary_name
-        )))
+        ))))
     } else {
         // Single operator case - return as before
-        let operand_str = match operand.unwrap() {
-            FlatExpression::Number(n) => n,
-            FlatExpression::String(s) => s,
-            FlatExpression::Identifier(i) => i,
-            FlatExpression::BinaryOperation {
-                left,
-                operator,
-                right,
-            } => {
-                format!("{} {} {}", left, operator, right)
-            }
-        };
+        let operand_str = expression_to_string_simple(&operand.unwrap());
 
-        Ok(FlatExpression::String(format!(
+        Ok(create_variable_expression(FlatVariable::String(format!(
             "{} {}",
             operators[0], operand_str
-        )))
+        ))))
     }
 }
 
 // Helper function to convert FlatExpression to string (moved up for use in process_expression_section)
 fn expression_to_string(expr: &FlatExpression) -> String {
-    match expr {
-        FlatExpression::Number(n) => n.clone(),
-        FlatExpression::String(s) => s.clone(),
-        FlatExpression::Identifier(i) => i.clone(),
-        FlatExpression::BinaryOperation {
-            left,
-            operator,
-            right,
-        } => {
-            format!("{} {} {}", left, operator, right)
-        }
-    }
+    expression_to_string_simple(expr)
 }
 
 // Process a variable node (number, identifier_chain, prioritize, etc.)
@@ -432,15 +518,21 @@ fn process_variable(
         match child.kind_id() {
             id if id == node_kind_ids.number => {
                 let number_text = &code[child.start_byte()..child.end_byte()];
-                return Ok(FlatExpression::Number(number_text.to_string()));
+                return Ok(create_variable_expression(FlatVariable::Number(
+                    number_text.to_string(),
+                )));
             }
             id if id == node_kind_ids.identifier_chain => {
                 let id_text = &code[child.start_byte()..child.end_byte()];
-                return Ok(FlatExpression::Identifier(id_text.to_string()));
+                return Ok(create_variable_expression(FlatVariable::Identifier(
+                    id_text.to_string(),
+                )));
             }
             id if id == node_kind_ids.string => {
                 let string_text = &code[child.start_byte()..child.end_byte()];
-                return Ok(FlatExpression::String(string_text.to_string()));
+                return Ok(create_variable_expression(FlatVariable::String(
+                    string_text.to_string(),
+                )));
             }
             id if id == node_kind_ids.prioritize => {
                 // Always extract prioritized expressions into intermediate variables
@@ -482,7 +574,9 @@ fn process_variable(
                         };
                         statement_chain.push_statement(temporary_statement);
 
-                        return Ok(FlatExpression::Identifier(temporary_name));
+                        return Ok(create_variable_expression(FlatVariable::Identifier(
+                            temporary_name,
+                        )));
                     }
                 }
             }
@@ -504,15 +598,17 @@ fn process_expression_parts(
     if parts.len() < 2 {
         let single_part = parts.into_iter().next().unwrap();
         // Check if this single part is a unary operation (starts with operator)
-        if let FlatExpression::String(s) = &single_part {
+        if let FlatVariable::String(s) = &single_part.one {
             let part_split: Vec<&str> = s.splitn(2, ' ').collect();
             if part_split.len() == 2 {
                 // This is a unary operation like "- 0d1", convert to binary with implicit zero
-                return Ok(FlatExpression::BinaryOperation {
-                    left: "0".to_string(),
-                    operator: part_split[0].to_string(),
-                    right: part_split[1].to_string(),
-                });
+                if let Some(op) = string_to_arithmetic(part_split[0]) {
+                    return Ok(create_binary_expression(
+                        FlatVariable::Number("0".to_string()),
+                        op,
+                        string_to_variable(part_split[1]),
+                    ));
+                }
             }
         }
         return Ok(single_part);
@@ -523,7 +619,7 @@ fn process_expression_parts(
     let mut operators = Vec::new();
 
     // Check if first part starts with an operator (unary operator case)
-    let start_index = if let FlatExpression::String(s) = &parts[0] {
+    let start_index = if let FlatVariable::String(s) = &parts[0].one {
         let first_parts: Vec<&str> = s.splitn(2, ' ').collect();
         if first_parts.len() == 2 {
             // First part is "operator operand" - insert implicit zero
@@ -544,7 +640,7 @@ fn process_expression_parts(
 
     // Process remaining parts as "operator operand"
     for part in parts.iter().skip(start_index) {
-        if let FlatExpression::String(s) = part {
+        if let FlatVariable::String(s) = &part.one {
             let part_split: Vec<&str> = s.splitn(2, ' ').collect();
             if part_split.len() == 2 {
                 operators.push(part_split[0].to_string());
@@ -568,10 +664,17 @@ fn process_expression_parts(
                     name: temporary_name.clone(),
                     operation: FlatDefinitionOperation::Constant,
                 }),
-                expression: Some(FlatExpression::BinaryOperation {
-                    left,
-                    operator,
-                    right,
+                expression: Some(if let Some(op) = string_to_arithmetic(&operator) {
+                    create_binary_expression(
+                        string_to_variable(&left),
+                        op,
+                        string_to_variable(&right),
+                    )
+                } else {
+                    return Err(Error::FlattenError(format!(
+                        "Unknown operator: {}",
+                        operator
+                    )));
                 }),
             };
             statement_chain.push_statement(temporary_statement);
@@ -599,10 +702,13 @@ fn process_expression_parts(
                 name: temporary_name.clone(),
                 operation: FlatDefinitionOperation::Constant,
             }),
-            expression: Some(FlatExpression::BinaryOperation {
-                left,
-                operator,
-                right,
+            expression: Some(if let Some(op) = string_to_arithmetic(&operator) {
+                create_binary_expression(string_to_variable(&left), op, string_to_variable(&right))
+            } else {
+                return Err(Error::FlattenError(format!(
+                    "Unknown operator: {}",
+                    operator
+                )));
             }),
         };
         statement_chain.push_statement(temporary_statement);
@@ -618,13 +724,22 @@ fn process_expression_parts(
         let operator = operators[0].clone();
         let right = operands[1].clone();
 
-        Ok(FlatExpression::BinaryOperation {
-            left,
-            operator,
-            right,
-        })
+        if let Some(op) = string_to_arithmetic(&operator) {
+            Ok(create_binary_expression(
+                string_to_variable(&left),
+                op,
+                string_to_variable(&right),
+            ))
+        } else {
+            Err(Error::FlattenError(format!(
+                "Unknown operator: {}",
+                operator
+            )))
+        }
     } else {
-        Ok(FlatExpression::Identifier(operands[0].clone()))
+        Ok(create_variable_expression(FlatVariable::Identifier(
+            operands[0].clone(),
+        )))
     }
 }
 

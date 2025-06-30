@@ -1,0 +1,40 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "h_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d1" },
+                        "two": { "Number": "0d2" },
+                        "arithmetic": "Multiply"
+                    }
+                },
+                {
+                    "definition": { "name": "h_2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d3" },
+                        "two": { "Number": "0d4" },
+                        "arithmetic": "Divide"
+                    }
+                },
+                {
+                    "definition": { "name": "h_3", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0" },
+                        "two": { "Identifier": "h_1" },
+                        "arithmetic": "Substract"
+                    }
+                },
+                {
+                    "definition": { "name": "h", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "h_3" },
+                        "two": { "Identifier": "h_2" },
+                        "arithmetic": "Add"
+                    }
+                }
+            ]
+        }
+    ]
+}

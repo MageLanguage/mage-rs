@@ -1,0 +1,16 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "f", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0" },
+                        "two": { "Number": "0b1010" },
+                        "arithmetic": "Add"
+                    }
+                }
+            ]
+        }
+    ]
+}

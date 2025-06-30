@@ -1,110 +1,113 @@
+use std::{fs, io::Error};
+
+use serde_json;
+
 use tree_sitter::Parser;
 use tree_sitter_mage::LANGUAGE;
 
-use crate::{Error, flatten_tree};
+use crate::{FlatRoot, flatten_tree};
 
-fn setup(code: &str) -> Result<(), Error> {
+pub struct TestDirectoryIterator {
+    path: String,
+    current: usize,
+    number: usize,
+}
+
+pub struct Pair {
+    mage: String,
+    json: String,
+}
+
+fn test_directory_iterator(path: &str, number: usize) -> TestDirectoryIterator {
+    TestDirectoryIterator {
+        path: path.to_string(),
+        current: 0,
+        number: number,
+    }
+}
+
+impl Iterator for TestDirectoryIterator {
+    type Item = Result<Pair, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current < self.number {
+            self.current += 1;
+
+            let mage = match fs::read_to_string(format!("src/{}/{}.mg", self.path, self.current)) {
+                Ok(mage) => mage,
+                Err(error) => return Some(Err(error)),
+            };
+
+            let json = match fs::read_to_string(format!("src/{}/{}.json", self.path, self.current))
+            {
+                Ok(json) => json,
+                Err(error) => return Some(Err(error)),
+            };
+
+            Some(Ok(Pair {
+                mage: mage,
+                json: json,
+            }))
+        } else {
+            None
+        }
+    }
+}
+
+fn test(pair: &Pair) -> Result<(), Error> {
+    let reference = serde_json::from_str::<FlatRoot>(pair.json.as_str()).unwrap();
+
     let mut parser = Parser::new();
     parser.set_language(&LANGUAGE.into()).unwrap();
 
-    let tree = parser.parse(code, None).unwrap();
+    let tree = parser.parse(pair.mage.as_str(), None).unwrap();
+    let root = flatten_tree(tree, pair.mage.as_str()).unwrap();
 
-    flatten_tree(tree, code).map(|_| ())
+    assert_eq!(reference, root);
+    Ok(())
 }
 
 #[test]
-fn test_definition_expression() {
-    let test_cases = [
-        "x : 0d10;",                  // Decimal number
-        "y : 0;",                     // Zero
-        "z : 0b1010;",                // Binary number
-        "a : 0o777;",                 // Octal number
-        "b : 0xFF;",                  // Hex number
-        "result : someVariable;",     // Identifier reference
-        "message : \"hello world\";", // String literal
-        "counter = 0d42;",            // Variable assignment (=)
-    ];
-
-    for code in test_cases {
-        setup(code).unwrap();
+fn test_expression() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/expression", 8) {
+        test(&pair?)?;
     }
+
+    Ok(())
 }
 
 #[test]
-fn test_definition_expression_with_high_precedence() {
-    let test_cases = [
-        "y : 0d10 - 0d2 * 0d2;",            // Basic multiplication with subtraction
-        "z : 0d100 + 0d20 / 0d4;",          // Basic division with addition
-        "a : 0d1 + 0d2 * 0d3 + 0d4 * 0d5;", // Multiple multiplications
-        "b : 0d100 - 0d20 / 0d4 - 0d8 / 0d2;", // Multiple divisions
-        "c : 0d10 + 0d6 * 0d2 / 0d3 - 0d1;", // Mixed multiplication and division
-        "d : 0d2 * 0d3 * 0d4;",             // Chain of multiplications only
-        "e : 0d1 + 0d2 * 0d3 + 0d4 / 0d2 * 0d5 - 0d6;", // Complex expression with multiple high precedence ops
-        "f : 0xFF + 0b10 * 0o7;", // Different number formats in high precedence
-    ];
-
-    for code in test_cases {
-        setup(code).unwrap();
+fn test_expression_with_high_precedence() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/expression_with_high_precedence", 8) {
+        test(&pair?)?;
     }
+
+    Ok(())
 }
 
 #[test]
-fn test_definition_expression_with_prioritize() {
-    let test_cases = [
-        "x : 0d10 - [0d10 - 0d5];",            // Basic prioritize with subtraction
-        "y : 0d5 * [0d2 + 0d3];",              // Prioritize with addition
-        "z : [0d1 + 0d2] * [0d3 + 0d4];",      // Multiple prioritize expressions
-        "a : 0d1 + [0d2 + [0d3 * 0d4]];",      // Nested prioritize expressions
-        "b : [0d1 + [0d2 * [0d3 + 0d4]]];",    // Deeply nested prioritize
-        "c : 0d10 + [0d2 * 0d3 + 0d4] * 0d5;", // Prioritize with high precedence operations
-        "d : 0d1 + [0d2 + 0d3] * 0d4 + [0d5 * 0d6] - 0d7;", // Complex mixed case
-        "e : [0d10 + 0d20];",                  // Prioritize only (no other operations)
-        "f : [0d100 / [0d10 + 0d5]] - [0d2 * 0d3];", // Multiple levels with different operators
-    ];
-
-    for code in test_cases {
-        setup(code).unwrap();
+fn test_expression_with_leading_zero_omitted() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/expression_with_leading_zero_omitted", 11) {
+        test(&pair?)?;
     }
+
+    Ok(())
 }
 
 #[test]
-fn test_definition_expression_with_multiple_arithmetic() {
-    let test_cases = [
-        "x : 0d10 + - 0d5;",        // Addition with unary minus
-        "y : 0d10 - - 0d5;",        // Subtraction with unary minus
-        "z : 0d10 * + 0d5;",        // Multiplication with unary plus
-        "a : 0d10 / - 0d5;",        // Division with unary minus
-        "b : 0d1 + + + 0d2;",       // Multiple unary plus operators
-        "c : 0d1 - - - 0d2;",       // Multiple unary minus operators
-        "d : 0d1 + - + 0d2;",       // Mixed unary operators
-        "e : 0d1 * - - 0d2;",       // High precedence with double minus
-        "f : 0d1 + - 0d2 * 0d3;",   // Multiple operators with precedence
-        "g : 0d1 + - [0d2 + 0d3];", // Multiple operators with prioritize
-        "h : [0d1 + 0d2] * - 0d3;", // Prioritize with multiple operators
-    ];
-
-    for code in test_cases {
-        setup(code).unwrap();
+fn test_expression_with_multiple_arithmetic() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/expression_with_multiple_arithmetic", 11) {
+        test(&pair?)?;
     }
+
+    Ok(())
 }
 
 #[test]
-fn test_definition_expression_with_leading_zero_omitted() {
-    let test_cases = [
-        "x : - 0d1;",                   // Simple unary minus
-        "y : + 0d1;",                   // Simple unary plus
-        "z : - 0d1 + 0d2;",             // Unary minus with addition
-        "a : + 0d1 - 0d2;",             // Unary plus with subtraction
-        "b : - 0d1 * 0d2;",             // Unary minus with multiplication
-        "c : - 0d1 + 0d2 * 0d3;",       // Unary with mixed precedence
-        "d : - 0d1 + 0d2 + 0d3;",       // Unary with multiple additions
-        "e : - 0xFF;",                  // Unary with hex number
-        "f : + 0b1010;",                // Unary with binary number
-        "g : - [0d1 + 0d2];",           // Unary with prioritized expression
-        "h : - 0d1 * 0d2 + 0d3 / 0d4;", // Complex unary expression
-    ];
-
-    for code in test_cases {
-        setup(code).unwrap();
+fn test_expression_with_prioritize() -> Result<(), Error> {
+    for pair in test_directory_iterator("flatten_tests/expression_with_prioritize", 9) {
+        test(&pair?)?;
     }
+
+    Ok(())
 }

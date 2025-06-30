@@ -1,0 +1,24 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "d_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d2" },
+                        "two": { "Number": "0d3" },
+                        "arithmetic": "Multiply"
+                    }
+                },
+                {
+                    "definition": { "name": "d", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "d_1" },
+                        "two": { "Number": "0d4" },
+                        "arithmetic": "Multiply"
+                    }
+                }
+            ]
+        }
+    ]
+}

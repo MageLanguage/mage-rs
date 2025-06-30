@@ -1,0 +1,24 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "f_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0b10" },
+                        "two": { "Number": "0o7" },
+                        "arithmetic": "Multiply"
+                    }
+                },
+                {
+                    "definition": { "name": "f", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0xFF" },
+                        "two": { "Identifier": "f_1" },
+                        "arithmetic": "Add"
+                    }
+                }
+            ]
+        }
+    ]
+}

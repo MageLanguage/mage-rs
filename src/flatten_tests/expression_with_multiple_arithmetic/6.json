@@ -1,0 +1,32 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "c_2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0" },
+                        "two": { "Number": "0d2" },
+                        "arithmetic": "Substract"
+                    }
+                },
+                {
+                    "definition": { "name": "c_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0" },
+                        "two": { "Identifier": "c_2" },
+                        "arithmetic": "Substract"
+                    }
+                },
+                {
+                    "definition": { "name": "c", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0d1" },
+                        "two": { "Identifier": "c_1" },
+                        "arithmetic": "Substract"
+                    }
+                }
+            ]
+        }
+    ]
+}

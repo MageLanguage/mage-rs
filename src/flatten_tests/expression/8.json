@@ -1,0 +1,19 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": {
+                        "name": "counter",
+                        "operation": "Variable"
+                    },
+                    "expression": {
+                        "one": { "Number": "0d42" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}

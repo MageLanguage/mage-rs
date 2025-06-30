@@ -1,0 +1,24 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "a_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Number": "0" },
+                        "two": { "Number": "0d1" },
+                        "arithmetic": "Add"
+                    }
+                },
+                {
+                    "definition": { "name": "a", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "a_1" },
+                        "two": { "Number": "0d2" },
+                        "arithmetic": "Substract"
+                    }
+                }
+            ]
+        }
+    ]
+}
