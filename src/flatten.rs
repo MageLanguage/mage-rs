@@ -46,8 +46,9 @@ pub enum FlatDefinitionOperation {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub struct FlatExpression {
-    content: String,
+pub enum FlatExpression {
+    Number(String),
+    String(String),
 }
 
 pub fn flatten_tree(tree: Tree, code: &str) -> Result<(), Error> {
@@ -62,7 +63,7 @@ pub fn flatten_node(node: Node, code: &str) -> Result<(), Error> {
     if node.kind() == "source_file" || node.kind() == "source" {
         for child in node.children(&mut node.walk()) {
             if child.kind() == "statement_chain" {
-                flatten_statement_chain(child, &mut root, code)?;
+                flatten_statement_chain(child, code, &mut root)?;
             }
         }
     }
@@ -72,14 +73,14 @@ pub fn flatten_node(node: Node, code: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn flatten_statement_chain(node: Node, root: &mut FlatRoot, code: &str) -> Result<(), Error> {
+fn flatten_statement_chain(node: Node, code: &str, root: &mut FlatRoot) -> Result<(), Error> {
     let mut statement_chain = FlatStatementChain {
         statements: Vec::new(),
     };
 
     for child in node.children(&mut node.walk()) {
         if child.kind() == "statement" {
-            flatten_statement(child, &mut statement_chain, code)?
+            flatten_statement(child, code, &mut statement_chain)?
         }
     }
 
@@ -89,10 +90,10 @@ fn flatten_statement_chain(node: Node, root: &mut FlatRoot, code: &str) -> Resul
 
 fn flatten_statement(
     node: Node,
-    statement_chain: &mut FlatStatementChain,
     code: &str,
+    statement_chain: &mut FlatStatementChain,
 ) -> Result<(), Error> {
-    let mut main_statement = FlatStatement {
+    let mut statement = FlatStatement {
         definition: None,
         expression: None,
     };
@@ -124,45 +125,41 @@ fn flatten_statement(
                     }
                 }
 
-                main_statement.definition = Some(definition);
+                statement.definition = Some(definition);
             }
             "expression" => {
-                let name = if let Some(ref definition) = main_statement.definition {
-                    definition.name.clone()
-                } else {
-                    "temporary".to_string()
-                };
-
-                let mut temp_counter = 1;
-                let flattened_expr =
-                    flatten_expression(child, code, &name, &mut temp_counter, statement_chain)?;
-
-                main_statement.expression = Some(FlatExpression {
-                    content: flattened_expr,
-                });
+                flatten_expression(child, code, statement_chain, &mut statement)?;
             }
             _ => (),
         }
     }
 
-    statement_chain.push_statement(main_statement);
+    statement_chain.push_statement(statement);
     Ok(())
 }
 
 fn flatten_expression(
     node: Node,
     code: &str,
-    base_name: &str,
-    temp_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
-) -> Result<String, Error> {
+    statement: &mut FlatStatement,
+) -> Result<(), Error> {
+    let name = if let Some(ref definition) = statement.definition {
+        definition.name.clone()
+    } else {
+        "temporary".to_string()
+    };
+
+    let mut temp_counter = 1;
+
     // Collect all tokens from the expression in order
     let mut tokens = Vec::new();
     collect_expression_tokens(node, code, &mut tokens)?;
 
     // If we have a simple expression (just one operand), return it directly
     if tokens.len() == 1 {
-        return Ok(tokens[0].clone());
+        statement.expression = Some(FlatExpression::String(tokens[0].clone()));
+        return Ok(());
     }
 
     // Process high-precedence operations (* and /) first
@@ -183,8 +180,8 @@ fn flatten_expression(
                     && should_extract_operation(&processed_tokens, i)
                 {
                     // Create intermediate variable
-                    let temp_name = format!("{}_{}", base_name, temp_counter);
-                    *temp_counter += 1;
+                    let temp_name = format!("{}_{}", name, temp_counter);
+                    temp_counter += 1;
 
                     // Create the intermediate expression
                     let temp_expr = format!(
@@ -199,7 +196,7 @@ fn flatten_expression(
                             name: temp_name.clone(),
                             operation: FlatDefinitionOperation::Constant,
                         }),
-                        expression: Some(FlatExpression { content: temp_expr }),
+                        expression: Some(FlatExpression::String(temp_expr)),
                     };
                     statement_chain.push_statement(temp_statement);
 
@@ -224,8 +221,8 @@ fn flatten_expression(
         }
     }
 
-    // Join remaining tokens into final expression
-    Ok(processed_tokens.join(" "))
+    statement.expression = Some(FlatExpression::String(processed_tokens.join(" ")));
+    Ok(())
 }
 
 // Collect all tokens (operands and operators) from expression in order
