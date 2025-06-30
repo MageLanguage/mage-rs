@@ -100,41 +100,47 @@ fn flatten_statement(
 
     for child in node.children(&mut node.walk()) {
         match child.kind() {
-            "definition" => {
-                let mut definition = FlatDefinition {
-                    name: "".to_string(),
-                    operation: FlatDefinitionOperation::Constant,
-                };
-
-                for child in child.children(&mut child.walk()) {
-                    let text = &code[child.start_byte()..child.end_byte()];
-
-                    match child.kind() {
-                        "identifier_chain" => {
-                            definition.name = text.to_string();
-                        }
-                        "definition_operation" => {
-                            if text == ":" {
-                                definition.operation = FlatDefinitionOperation::Constant
-                            }
-                            if text == "=" {
-                                definition.operation = FlatDefinitionOperation::Variable
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-
-                statement.definition = Some(definition);
-            }
-            "expression" => {
-                flatten_expression(child, code, statement_chain, &mut statement)?;
-            }
+            "definition" => flatten_definition(child, code, statement_chain, &mut statement)?,
+            "expression" => flatten_expression(child, code, statement_chain, &mut statement)?,
             _ => (),
         }
     }
 
     statement_chain.push_statement(statement);
+    Ok(())
+}
+
+fn flatten_definition(
+    node: Node,
+    code: &str,
+    _statement_chain: &mut FlatStatementChain,
+    statement: &mut FlatStatement,
+) -> Result<(), Error> {
+    let mut definition = FlatDefinition {
+        name: "".to_string(),
+        operation: FlatDefinitionOperation::Constant,
+    };
+
+    for child in node.children(&mut node.walk()) {
+        let text = &code[child.start_byte()..child.end_byte()];
+
+        match child.kind() {
+            "identifier_chain" => {
+                definition.name = text.to_string();
+            }
+            "definition_operation" => {
+                if text == ":" {
+                    definition.operation = FlatDefinitionOperation::Constant
+                }
+                if text == "=" {
+                    definition.operation = FlatDefinitionOperation::Variable
+                }
+            }
+            _ => (),
+        }
+    }
+
+    statement.definition = Some(definition);
     Ok(())
 }
 
