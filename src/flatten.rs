@@ -182,12 +182,6 @@ fn flatten_expression(
         statement_chain,
     )?;
 
-    // If we have a simple expression (just one part), return it directly
-    if expression_parts.len() == 1 {
-        statement.expression = Some(expression_parts[0].clone());
-        return Ok(());
-    }
-
     // Process the expression parts to create binary operations
     let flattened_expr = process_expression_parts(
         expression_parts,
@@ -362,23 +356,53 @@ fn process_expression_parts(
     statement_chain: &mut FlatStatementChain,
 ) -> Result<FlatExpression, Error> {
     if parts.len() < 2 {
-        return Ok(parts.into_iter().next().unwrap());
+        let single_part = parts.into_iter().next().unwrap();
+        // Check if this single part is a unary operation (starts with operator)
+        if let FlatExpression::String(s) = &single_part {
+            let part_split: Vec<&str> = s.splitn(2, ' ').collect();
+            if part_split.len() == 2 {
+                // This is a unary operation like "- 0d1", convert to binary with implicit zero
+                return Ok(FlatExpression::BinaryOperation {
+                    left: "0".to_string(),
+                    operator: part_split[0].to_string(),
+                    right: part_split[1].to_string(),
+                });
+            }
+        }
+        return Ok(single_part);
     }
 
     // Convert expression parts into a list of operands and operators
     let mut operands = Vec::new();
     let mut operators = Vec::new();
 
-    // First part should be just an operand
-    operands.push(expression_to_string(&parts[0]));
+    // Check if first part starts with an operator (unary operator case)
+    let start_index = if let FlatExpression::String(s) = &parts[0] {
+        let first_parts: Vec<&str> = s.splitn(2, ' ').collect();
+        if first_parts.len() == 2 {
+            // First part is "operator operand" - insert implicit zero
+            operands.push("0".to_string());
+            operators.push(first_parts[0].to_string());
+            operands.push(first_parts[1].to_string());
+            1 // Start processing from second part
+        } else {
+            // First part is just an operand
+            operands.push(expression_to_string(&parts[0]));
+            1 // Start processing from second part
+        }
+    } else {
+        // First part is just an operand
+        operands.push(expression_to_string(&parts[0]));
+        1 // Start processing from second part
+    };
 
-    // Subsequent parts should be "operator operand"
-    for part in parts.iter().skip(1) {
+    // Process remaining parts as "operator operand"
+    for part in parts.iter().skip(start_index) {
         if let FlatExpression::String(s) = part {
-            let parts: Vec<&str> = s.splitn(2, ' ').collect();
-            if parts.len() == 2 {
-                operators.push(parts[0].to_string());
-                operands.push(parts[1].to_string());
+            let part_split: Vec<&str> = s.splitn(2, ' ').collect();
+            if part_split.len() == 2 {
+                operators.push(part_split[0].to_string());
+                operands.push(part_split[1].to_string());
             }
         }
     }

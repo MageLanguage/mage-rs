@@ -68,4 +68,25 @@ mod flatten_tests {
             setup(code).unwrap();
         }
     }
+
+    #[test]
+    fn test_definition_expression_with_leading_zero_omitted() {
+        let test_cases = [
+            "x : - 0d1;",                   // Simple unary minus
+            "y : + 0d1;",                   // Simple unary plus
+            "z : - 0d1 + 0d2;",             // Unary minus with addition
+            "a : + 0d1 - 0d2;",             // Unary plus with subtraction
+            "b : - 0d1 * 0d2;",             // Unary minus with multiplication
+            "c : - 0d1 + 0d2 * 0d3;",       // Unary with mixed precedence
+            "d : - 0d1 + 0d2 + 0d3;",       // Unary with multiple additions
+            "e : - 0xFF;",                  // Unary with hex number
+            "f : + 0b1010;",                // Unary with binary number
+            "g : - [0d1 + 0d2];",           // Unary with prioritized expression
+            "h : - 0d1 * 0d2 + 0d3 / 0d4;", // Complex unary expression
+        ];
+
+        for code in test_cases {
+            setup(code).unwrap();
+        }
+    }
 }
