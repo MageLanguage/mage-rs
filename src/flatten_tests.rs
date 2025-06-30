@@ -15,19 +15,19 @@ mod flatten_tests {
     }
 
     #[test]
-    fn test_definition_basic() {
+    fn test_definition_expression() {
         let code = "x : 0d10;";
         setup(code).unwrap();
     }
 
     #[test]
-    fn test_definition_complex() {
+    fn test_definition_expression_with_high_precedence() {
         let code = "y : 0d10 - 0d2 * 0d2;";
         setup(code).unwrap();
     }
 
     #[test]
-    fn test_definition_prioritize() {
+    fn test_definition_expression_with_prioritize() {
         let code = "x : 0d10 - [0d10 - 0d5];";
         setup(code).unwrap();
     }
