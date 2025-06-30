@@ -25,4 +25,10 @@ mod flatten_tests {
         let code = "y : 0d10 - 0d2 * 0d2;";
         setup(code).unwrap();
     }
+
+    #[test]
+    fn test_definition_prioritize() {
+        let code = "x : 0d10 - [0d10 - 0d5];";
+        setup(code).unwrap();
+    }
 }

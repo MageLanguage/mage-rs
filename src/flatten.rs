@@ -156,11 +156,18 @@ fn flatten_expression(
         "temporary".to_string()
     };
 
-    let mut temp_counter = 1;
+    let mut temporary_counter = 1;
 
     // Collect all tokens from the expression in order
     let mut tokens = Vec::new();
-    collect_expression_tokens(node, code, &mut tokens)?;
+    collect_expression_tokens(
+        node,
+        code,
+        &mut tokens,
+        &name,
+        &mut temporary_counter,
+        statement_chain,
+    )?;
 
     // If we have a simple expression (just one operand), return it directly
     if tokens.len() == 1 {
@@ -186,8 +193,8 @@ fn flatten_expression(
                     && should_extract_operation(&processed_tokens, i)
                 {
                     // Create intermediate variable
-                    let temp_name = format!("{}_{}", name, temp_counter);
-                    temp_counter += 1;
+                    let temporary_name = format!("{}_{}", name, temporary_counter);
+                    temporary_counter += 1;
 
                     // Create the intermediate expression
                     let temp_expr = format!(
@@ -199,7 +206,7 @@ fn flatten_expression(
 
                     let temp_statement = FlatStatement {
                         definition: Some(FlatDefinition {
-                            name: temp_name.clone(),
+                            name: temporary_name.clone(),
                             operation: FlatDefinitionOperation::Constant,
                         }),
                         expression: Some(FlatExpression::String(temp_expr)),
@@ -207,7 +214,7 @@ fn flatten_expression(
                     statement_chain.push_statement(temp_statement);
 
                     // Replace the three tokens with the temp variable name
-                    new_tokens.push(temp_name);
+                    new_tokens.push(temporary_name);
                     i += 3;
                     found_high_precedence = true;
                 } else {
@@ -227,6 +234,33 @@ fn flatten_expression(
         }
     }
 
+    // Also flatten long chains of low-precedence operations (+ and -)
+    while processed_tokens.len() > 3 {
+        // Create intermediate variable for the first binary operation
+        let temporary_name = format!("{}_{}", name, temporary_counter);
+        temporary_counter += 1;
+
+        // Create intermediate expression: first_operand operator second_operand
+        let temp_expr = format!(
+            "{} {} {}",
+            processed_tokens[0], processed_tokens[1], processed_tokens[2]
+        );
+
+        let temp_statement = FlatStatement {
+            definition: Some(FlatDefinition {
+                name: temporary_name.clone(),
+                operation: FlatDefinitionOperation::Constant,
+            }),
+            expression: Some(FlatExpression::String(temp_expr)),
+        };
+        statement_chain.push_statement(temp_statement);
+
+        // Replace first three tokens with the temp variable
+        let mut new_tokens = vec![temporary_name];
+        new_tokens.extend_from_slice(&processed_tokens[3..]);
+        processed_tokens = new_tokens;
+    }
+
     statement.expression = Some(FlatExpression::String(processed_tokens.join(" ")));
     Ok(())
 }
@@ -236,6 +270,9 @@ fn collect_expression_tokens(
     node: Node,
     code: &str,
     tokens: &mut Vec<String>,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
 ) -> Result<(), Error> {
     for child in node.children(&mut node.walk()) {
         match child.kind() {
@@ -250,6 +287,41 @@ fn collect_expression_tokens(
             "identifier_chain" => {
                 let id_text = &code[child.start_byte()..child.end_byte()];
                 tokens.push(id_text.to_string());
+            }
+            "prioritize" => {
+                // Always extract prioritized expressions into intermediate variables
+                let temp_name = format!("{}_{}", base_name, temporary_counter);
+                *temporary_counter += 1;
+
+                // Recursively flatten the prioritized expression
+                let mut inner_tokens = Vec::new();
+                for inner_child in child.children(&mut child.walk()) {
+                    if inner_child.kind() == "expression" {
+                        collect_expression_tokens(
+                            inner_child,
+                            code,
+                            &mut inner_tokens,
+                            base_name,
+                            temporary_counter,
+                            statement_chain,
+                        )?;
+                        break;
+                    }
+                }
+
+                // Create intermediate statement for the prioritized expression
+                let temp_expr = inner_tokens.join(" ");
+                let temp_statement = FlatStatement {
+                    definition: Some(FlatDefinition {
+                        name: temp_name.clone(),
+                        operation: FlatDefinitionOperation::Constant,
+                    }),
+                    expression: Some(FlatExpression::String(temp_expr)),
+                };
+                statement_chain.push_statement(temp_statement);
+
+                // Use the temp variable name in place of the prioritized expression
+                tokens.push(temp_name);
             }
             _ => {
                 // Handle other expression types if needed
