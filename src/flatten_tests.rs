@@ -1,9 +1,9 @@
 #[cfg(test)]
-mod flatify_tests {
+mod flatten_tests {
     use tree_sitter::Parser;
     use tree_sitter_mage::LANGUAGE;
 
-    use crate::{Error, flatify_tree};
+    use crate::{Error, flatten_tree};
 
     fn setup(code: &str) -> Result<(), Error> {
         let mut parser = Parser::new();
@@ -11,7 +11,7 @@ mod flatify_tests {
 
         let tree = parser.parse(code, None).unwrap();
 
-        flatify_tree(tree, code)
+        flatten_tree(tree, code)
     }
 
     #[test]

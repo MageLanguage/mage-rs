@@ -1,7 +1,7 @@
-mod flatify;
-pub use flatify::*;
+mod flatten;
+pub use flatten::*;
 
-mod flatify_tests;
+mod flatten_tests;
 
 #[derive(Debug)]
 pub enum Error {
