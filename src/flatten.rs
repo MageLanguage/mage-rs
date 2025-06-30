@@ -649,20 +649,35 @@ fn process_identifier_chain(
         }
 
         if let Some(call_index) = first_call_index {
-            // Extract up to and including the first call
+            // Extract the call into a temporary variable
             let temporary_name = format!("{}_{}", base_name, temporary_counter);
             *temporary_counter += 1;
 
-            // Build the expression up to and including the call
-            let mut call_parts = Vec::new();
-            for i in 0..=call_index {
+            // Process the call with its arguments
+            let processed_call = process_call_with_arguments(
+                chain_parts[call_index],
+                code,
+                base_name,
+                temporary_counter,
+                statement_chain,
+                node_kind_ids,
+                force_call_extraction,
+            )?;
+
+            // Build the prefix (parts before the call)
+            let mut prefix_parts = Vec::new();
+            for i in 0..call_index {
                 let part_text =
                     code[chain_parts[i].start_byte()..chain_parts[i].end_byte()].to_string();
-                call_parts.push(part_text);
+                prefix_parts.push(part_text);
             }
 
+            // Create the call expression
+            let mut call_parts = prefix_parts;
+            call_parts.push(processed_call);
             let call_expression = call_parts.join(".");
 
+            // Create temporary statement for the call
             let temporary_statement = FlatStatement {
                 definition: Some(FlatDefinition {
                     name: temporary_name.clone(),
@@ -674,22 +689,28 @@ fn process_identifier_chain(
             };
             statement_chain.push_statement(temporary_statement);
 
-            // Build the remaining chain with the temporary variable
+            // Build the suffix (parts after the call)
             let remaining_parts = &chain_parts[call_index + 1..];
             if remaining_parts.is_empty() {
                 Ok(create_variable_expression(FlatVariable::Identifier(
                     temporary_name,
                 )))
             } else {
-                let mut remaining_parts_text = Vec::new();
+                let mut suffix_parts = Vec::new();
                 for identifier_node in remaining_parts {
-                    let part_text =
-                        code[identifier_node.start_byte()..identifier_node.end_byte()].to_string();
-                    remaining_parts_text.push(part_text);
+                    let processed_part = process_identifier_part_with_calls(
+                        *identifier_node,
+                        code,
+                        base_name,
+                        temporary_counter,
+                        statement_chain,
+                        node_kind_ids,
+                        force_call_extraction,
+                    )?;
+                    suffix_parts.push(processed_part);
                 }
 
-                let final_identifier =
-                    format!("{}.{}", temporary_name, remaining_parts_text.join("."));
+                let final_identifier = format!("{}.{}", temporary_name, suffix_parts.join("."));
                 Ok(create_variable_expression(FlatVariable::Identifier(
                     final_identifier,
                 )))
@@ -716,11 +737,18 @@ fn process_identifier_chain(
 
         // Check if it contains any calls and extract them only if forced
         if force_call_extraction && has_call_in_identifier(&chain_parts[0], node_kind_ids)? {
+            let processed_call = process_call_with_arguments(
+                chain_parts[0],
+                code,
+                base_name,
+                temporary_counter,
+                statement_chain,
+                node_kind_ids,
+                force_call_extraction,
+            )?;
+
             let temporary_name = format!("{}_{}", base_name, temporary_counter);
             *temporary_counter += 1;
-
-            let call_expression =
-                code[chain_parts[0].start_byte()..chain_parts[0].end_byte()].to_string();
 
             let temporary_statement = FlatStatement {
                 definition: Some(FlatDefinition {
@@ -728,7 +756,7 @@ fn process_identifier_chain(
                     operation: FlatDefinitionOperation::Constant,
                 }),
                 expression: Some(create_variable_expression(FlatVariable::Identifier(
-                    call_expression,
+                    processed_call,
                 ))),
             };
             statement_chain.push_statement(temporary_statement);
@@ -809,6 +837,198 @@ fn process_nested_call(
         Ok(create_variable_expression(FlatVariable::Identifier(
             id_text,
         )))
+    }
+}
+
+// Process a single identifier part that may contain calls with arguments
+fn process_identifier_part_with_calls(
+    identifier_node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
+    force_call_extraction: bool,
+) -> Result<String, Error> {
+    if has_call_in_identifier(&identifier_node, node_kind_ids)? {
+        process_call_with_arguments(
+            identifier_node,
+            code,
+            base_name,
+            temporary_counter,
+            statement_chain,
+            node_kind_ids,
+            force_call_extraction,
+        )
+    } else {
+        Ok(code[identifier_node.start_byte()..identifier_node.end_byte()].to_string())
+    }
+}
+
+// Process a call with its arguments, extracting nested calls from arguments
+fn process_call_with_arguments(
+    identifier_node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
+    _force_call_extraction: bool,
+) -> Result<String, Error> {
+    // Find the call node within the identifier
+    for identifier_child in identifier_node.children(&mut identifier_node.walk()) {
+        if identifier_child.kind_id() == node_kind_ids.call {
+            return process_call_node(
+                identifier_child,
+                code,
+                base_name,
+                temporary_counter,
+                statement_chain,
+                node_kind_ids,
+            );
+        }
+    }
+
+    // If no call found, return the text as-is
+    Ok(code[identifier_node.start_byte()..identifier_node.end_byte()].to_string())
+}
+
+// Process a call node, handling arguments that may contain nested calls
+fn process_call_node(
+    call_node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
+) -> Result<String, Error> {
+    let mut call_identifier = String::new();
+    let mut processed_args = Vec::new();
+    let mut found_identifier = false;
+
+    // Process call children to extract identifier and arguments
+    for call_child in call_node.children(&mut call_node.walk()) {
+        if call_child.kind_id() == node_kind_ids.identifier {
+            // Process the identifier part (which might itself be a call)
+            call_identifier = process_identifier_part_with_calls(
+                call_child,
+                code,
+                base_name,
+                temporary_counter,
+                statement_chain,
+                node_kind_ids,
+                true, // Force extraction for nested calls
+            )?;
+            found_identifier = true;
+        } else if call_child.kind_id() == node_kind_ids.expression {
+            // Process expression argument, extracting any nested calls
+            let processed_arg = process_call_argument(
+                call_child,
+                code,
+                base_name,
+                temporary_counter,
+                statement_chain,
+                node_kind_ids,
+            )?;
+            processed_args.push(processed_arg);
+        }
+    }
+
+    if !found_identifier {
+        return Err(Error::FlattenError("Call without identifier".to_string()));
+    }
+
+    // Reconstruct the call with processed arguments
+    if processed_args.is_empty() {
+        Ok(format!("{}()", call_identifier))
+    } else {
+        Ok(format!(
+            "{}({})",
+            call_identifier,
+            processed_args.join(", ")
+        ))
+    }
+}
+
+// Process a call argument (expression), extracting any nested calls
+fn process_call_argument(
+    expression_node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
+) -> Result<String, Error> {
+    // Process the expression, which will extract any nested calls
+    let mut expression_parts = Vec::new();
+
+    collect_expression_sections(
+        expression_node,
+        code,
+        &mut expression_parts,
+        base_name,
+        temporary_counter,
+        statement_chain,
+        node_kind_ids,
+        true, // Always force call extraction in arguments
+    )?;
+
+    if expression_parts.is_empty() {
+        return Err(Error::FlattenError(
+            "Empty expression in call argument".to_string(),
+        ));
+    }
+
+    if expression_parts.len() == 1 {
+        // Simple argument - check if it needs to be extracted
+        let arg_expr = &expression_parts[0];
+        if let FlatVariable::Identifier(id) = &arg_expr.one {
+            if id.contains('(') && id.contains(')') {
+                // This is a call that was extracted, create a temporary for it
+                let temp_name = format!("{}_{}", base_name, temporary_counter);
+                *temporary_counter += 1;
+
+                let temp_statement = FlatStatement {
+                    definition: Some(FlatDefinition {
+                        name: temp_name.clone(),
+                        operation: FlatDefinitionOperation::Constant,
+                    }),
+                    expression: Some(arg_expr.clone()),
+                };
+                statement_chain.push_statement(temp_statement);
+
+                Ok(temp_name)
+            } else {
+                Ok(id.clone())
+            }
+        } else {
+            // Non-identifier argument (number, string, etc.)
+            Ok(expression_to_string_simple(arg_expr))
+        }
+    } else {
+        // Complex argument with multiple parts - process as binary operations
+        let flattened_expr = process_expression_parts(
+            expression_parts,
+            base_name,
+            temporary_counter,
+            statement_chain,
+            node_kind_ids,
+        )?;
+
+        // Create a temporary for the complex argument
+        let temp_name = format!("{}_{}", base_name, temporary_counter);
+        *temporary_counter += 1;
+
+        let temp_statement = FlatStatement {
+            definition: Some(FlatDefinition {
+                name: temp_name.clone(),
+                operation: FlatDefinitionOperation::Constant,
+            }),
+            expression: Some(flattened_expr),
+        };
+        statement_chain.push_statement(temp_statement);
+
+        Ok(temp_name)
     }
 }
 

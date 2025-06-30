@@ -123,3 +123,15 @@ fn test_expression_with_identifier_chain_with_calls() -> Result<(), Error> {
 
     Ok(())
 }
+
+#[test]
+fn test_expression_with_identifier_chain_with_calls_with_arguments() -> Result<(), Error> {
+    for pair in test_directory_iterator(
+        "flatten_tests/expression_with_identifier_chain_with_calls_with_arguments",
+        4,
+    ) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}

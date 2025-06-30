@@ -1,0 +1,40 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "x_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "y(0d10)" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "x_2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "a()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "x_3", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "b()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "x", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "x_1.z(x_2, x_3)" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}
