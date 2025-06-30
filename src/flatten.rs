@@ -49,6 +49,19 @@ pub enum FlatDefinitionOperation {
 pub enum FlatExpression {
     Number(String),
     String(String),
+    Identifier(String),
+    BinaryOperation {
+        left: String,
+        operator: String,
+        right: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum FlatExpressionSection {
+    Number(String),
+    String(String),
 }
 
 pub fn flatten_tree(tree: Tree, code: &str) -> Result<(), Error> {
@@ -158,187 +171,300 @@ fn flatten_expression(
 
     let mut temporary_counter = 1;
 
-    // Collect all tokens from the expression in order
-    let mut tokens = Vec::new();
-    collect_expression_tokens(
+    // Collect expression sections from the structured expression
+    let mut expression_parts = Vec::new();
+    collect_expression_sections(
         node,
         code,
-        &mut tokens,
+        &mut expression_parts,
         &name,
         &mut temporary_counter,
         statement_chain,
     )?;
 
-    // If we have a simple expression (just one operand), return it directly
-    if tokens.len() == 1 {
-        statement.expression = Some(FlatExpression::String(tokens[0].clone()));
+    // If we have a simple expression (just one part), return it directly
+    if expression_parts.len() == 1 {
+        statement.expression = Some(expression_parts[0].clone());
         return Ok(());
     }
 
-    // Process high-precedence operations (* and /) first
-    let mut processed_tokens = tokens;
+    // Process the expression parts to create binary operations
+    let flattened_expr = process_expression_parts(
+        expression_parts,
+        &name,
+        &mut temporary_counter,
+        statement_chain,
+    )?;
 
-    // Continue processing until no more high-precedence operations can be flattened
-    loop {
-        let mut found_high_precedence = false;
-        let mut new_tokens = Vec::new();
-        let mut i = 0;
-
-        while i < processed_tokens.len() {
-            if i + 2 < processed_tokens.len() {
-                let operator = &processed_tokens[i + 1];
-
-                // Check if this is a high-precedence operation that should be extracted
-                if (operator == "*" || operator == "/")
-                    && should_extract_operation(&processed_tokens, i)
-                {
-                    // Create intermediate variable
-                    let temporary_name = format!("{}_{}", name, temporary_counter);
-                    temporary_counter += 1;
-
-                    // Create the intermediate expression
-                    let temporary_expression = format!(
-                        "{} {} {}",
-                        processed_tokens[i],
-                        processed_tokens[i + 1],
-                        processed_tokens[i + 2]
-                    );
-
-                    let temporary_statement = FlatStatement {
-                        definition: Some(FlatDefinition {
-                            name: temporary_name.clone(),
-                            operation: FlatDefinitionOperation::Constant,
-                        }),
-                        expression: Some(FlatExpression::String(temporary_expression)),
-                    };
-                    statement_chain.push_statement(temporary_statement);
-
-                    // Replace the three tokens with the temp variable name
-                    new_tokens.push(temporary_name);
-                    i += 3;
-                    found_high_precedence = true;
-                } else {
-                    new_tokens.push(processed_tokens[i].clone());
-                    i += 1;
-                }
-            } else {
-                new_tokens.push(processed_tokens[i].clone());
-                i += 1;
-            }
-        }
-
-        processed_tokens = new_tokens;
-
-        if !found_high_precedence {
-            break;
-        }
-    }
-
-    // Also flatten long chains of low-precedence operations (+ and -)
-    while processed_tokens.len() > 3 {
-        // Create intermediate variable for the first binary operation
-        let temporary_name = format!("{}_{}", name, temporary_counter);
-        temporary_counter += 1;
-
-        // Create intermediate expression: first_operand operator second_operand
-        let temporary_expression = format!(
-            "{} {} {}",
-            processed_tokens[0], processed_tokens[1], processed_tokens[2]
-        );
-
-        let temporary_statement = FlatStatement {
-            definition: Some(FlatDefinition {
-                name: temporary_name.clone(),
-                operation: FlatDefinitionOperation::Constant,
-            }),
-            expression: Some(FlatExpression::String(temporary_expression)),
-        };
-        statement_chain.push_statement(temporary_statement);
-
-        // Replace first three tokens with the temp variable
-        let mut new_tokens = vec![temporary_name];
-        new_tokens.extend_from_slice(&processed_tokens[3..]);
-        processed_tokens = new_tokens;
-    }
-
-    statement.expression = Some(FlatExpression::String(processed_tokens.join(" ")));
+    statement.expression = Some(flattened_expr);
     Ok(())
 }
 
-// Collect all tokens (operands and operators) from expression in order
-fn collect_expression_tokens(
+// Collect expression sections from the structured expression
+fn collect_expression_sections(
     node: Node,
     code: &str,
-    tokens: &mut Vec<String>,
+    parts: &mut Vec<FlatExpression>,
     base_name: &str,
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
 ) -> Result<(), Error> {
     for child in node.children(&mut node.walk()) {
+        if child.kind() == "expression_section" {
+            let expr_part = process_expression_section(
+                child,
+                code,
+                base_name,
+                temporary_counter,
+                statement_chain,
+            )?;
+            parts.push(expr_part);
+        }
+    }
+    Ok(())
+}
+
+// Process a single expression section
+fn process_expression_section(
+    node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+) -> Result<FlatExpression, Error> {
+    let mut operators = Vec::new();
+    let mut operand = None;
+
+    for child in node.children(&mut node.walk()) {
+        match child.kind() {
+            "arithmetic" => {
+                let op_text = &code[child.start_byte()..child.end_byte()];
+                operators.push(op_text.to_string());
+            }
+            "variable" => {
+                operand = Some(process_variable(
+                    child,
+                    code,
+                    base_name,
+                    temporary_counter,
+                    statement_chain,
+                )?);
+            }
+            _ => {}
+        }
+    }
+
+    // For the first section, there should be no operators, just return the operand
+    if operators.is_empty() {
+        return operand.ok_or_else(|| {
+            Error::ParseError("No operand found in expression section".to_string())
+        });
+    }
+
+    // For subsequent sections, we have operators followed by operand
+    // For now, we'll represent this as a string until we process it into binary operations
+    let operand_str = match operand.unwrap() {
+        FlatExpression::Number(n) => n,
+        FlatExpression::String(s) => s,
+        FlatExpression::Identifier(i) => i,
+        FlatExpression::BinaryOperation {
+            left,
+            operator,
+            right,
+        } => {
+            format!("{} {} {}", left, operator, right)
+        }
+    };
+
+    Ok(FlatExpression::String(format!(
+        "{} {}",
+        operators.join(" "),
+        operand_str
+    )))
+}
+
+// Process a variable node (number, identifier_chain, prioritize, etc.)
+fn process_variable(
+    node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+) -> Result<FlatExpression, Error> {
+    for child in node.children(&mut node.walk()) {
         match child.kind() {
             "number" => {
                 let number_text = &code[child.start_byte()..child.end_byte()];
-                tokens.push(number_text.to_string());
-            }
-            "arithmetic" => {
-                let op_text = &code[child.start_byte()..child.end_byte()];
-                tokens.push(op_text.to_string());
+                return Ok(FlatExpression::Number(number_text.to_string()));
             }
             "identifier_chain" => {
                 let id_text = &code[child.start_byte()..child.end_byte()];
-                tokens.push(id_text.to_string());
+                return Ok(FlatExpression::Identifier(id_text.to_string()));
+            }
+            "string" => {
+                let string_text = &code[child.start_byte()..child.end_byte()];
+                return Ok(FlatExpression::String(string_text.to_string()));
             }
             "prioritize" => {
                 // Always extract prioritized expressions into intermediate variables
                 let temporary_name = format!("{}_{}", base_name, temporary_counter);
                 *temporary_counter += 1;
 
-                // Recursively flatten the prioritized expression
-                let mut inner_tokens = Vec::new();
+                // Process the inner expression
                 for inner_child in child.children(&mut child.walk()) {
                     if inner_child.kind() == "expression" {
-                        collect_expression_tokens(
+                        let mut inner_parts = Vec::new();
+                        collect_expression_sections(
                             inner_child,
                             code,
-                            &mut inner_tokens,
+                            &mut inner_parts,
                             base_name,
                             temporary_counter,
                             statement_chain,
                         )?;
-                        break;
+
+                        let flattened_inner = if inner_parts.len() == 1 {
+                            inner_parts[0].clone()
+                        } else {
+                            process_expression_parts(
+                                inner_parts,
+                                base_name,
+                                temporary_counter,
+                                statement_chain,
+                            )?
+                        };
+
+                        let temporary_statement = FlatStatement {
+                            definition: Some(FlatDefinition {
+                                name: temporary_name.clone(),
+                                operation: FlatDefinitionOperation::Constant,
+                            }),
+                            expression: Some(flattened_inner),
+                        };
+                        statement_chain.push_statement(temporary_statement);
+
+                        return Ok(FlatExpression::Identifier(temporary_name));
                     }
                 }
-
-                // Create intermediate statement for the prioritized expression
-                let temporary_expression = inner_tokens.join(" ");
-                let temporary_statement = FlatStatement {
-                    definition: Some(FlatDefinition {
-                        name: temporary_name.clone(),
-                        operation: FlatDefinitionOperation::Constant,
-                    }),
-                    expression: Some(FlatExpression::String(temporary_expression)),
-                };
-                statement_chain.push_statement(temporary_statement);
-
-                // Use the temp variable name in place of the prioritized expression
-                tokens.push(temporary_name);
             }
-            _ => {
-                // Handle other expression types if needed
-            }
+            _ => {}
         }
     }
-    Ok(())
+
+    Err(Error::ParseError("Unknown variable type".to_string()))
 }
 
-// Check if a high-precedence operation should be extracted
-// Only extract if there's a low-precedence operation elsewhere in the expression
-fn should_extract_operation(tokens: &[String], current_pos: usize) -> bool {
-    // Look for low-precedence operations (+ or -) in the token list
-    for (i, token) in tokens.iter().enumerate() {
-        if i != current_pos + 1 && (token == "+" || token == "-") {
-            return true;
+// Process multiple expression parts into binary operations
+fn process_expression_parts(
+    parts: Vec<FlatExpression>,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+) -> Result<FlatExpression, Error> {
+    if parts.len() < 2 {
+        return Ok(parts.into_iter().next().unwrap());
+    }
+
+    // Convert expression parts into a list of operands and operators
+    let mut operands = Vec::new();
+    let mut operators = Vec::new();
+
+    // First part should be just an operand
+    operands.push(expression_to_string(&parts[0]));
+
+    // Subsequent parts should be "operator operand"
+    for part in parts.iter().skip(1) {
+        if let FlatExpression::String(s) = part {
+            let parts: Vec<&str> = s.splitn(2, ' ').collect();
+            if parts.len() == 2 {
+                operators.push(parts[0].to_string());
+                operands.push(parts[1].to_string());
+            }
         }
     }
-    false
+
+    // Process high-precedence operations first
+    while let Some(pos) = find_high_precedence_operation(&operators) {
+        if should_extract_high_precedence(&operators) {
+            let temporary_name = format!("{}_{}", base_name, temporary_counter);
+            *temporary_counter += 1;
+
+            let left = operands[pos].clone();
+            let operator = operators[pos].clone();
+            let right = operands[pos + 1].clone();
+
+            let temporary_statement = FlatStatement {
+                definition: Some(FlatDefinition {
+                    name: temporary_name.clone(),
+                    operation: FlatDefinitionOperation::Constant,
+                }),
+                expression: Some(FlatExpression::BinaryOperation {
+                    left,
+                    operator,
+                    right,
+                }),
+            };
+            statement_chain.push_statement(temporary_statement);
+
+            // Replace the three elements with the temporary variable
+            operands[pos] = temporary_name;
+            operands.remove(pos + 1);
+            operators.remove(pos);
+        } else {
+            break;
+        }
+    }
+
+    // Process remaining operations left to right
+    while operators.len() > 0 {
+        let temporary_name = format!("{}_{}", base_name, temporary_counter);
+        *temporary_counter += 1;
+
+        let left = operands[0].clone();
+        let operator = operators[0].clone();
+        let right = operands[1].clone();
+
+        let temporary_statement = FlatStatement {
+            definition: Some(FlatDefinition {
+                name: temporary_name.clone(),
+                operation: FlatDefinitionOperation::Constant,
+            }),
+            expression: Some(FlatExpression::BinaryOperation {
+                left,
+                operator,
+                right,
+            }),
+        };
+        statement_chain.push_statement(temporary_statement);
+
+        operands[0] = temporary_name;
+        operands.remove(1);
+        operators.remove(0);
+    }
+
+    Ok(FlatExpression::Identifier(operands[0].clone()))
+}
+
+// Helper functions
+fn expression_to_string(expr: &FlatExpression) -> String {
+    match expr {
+        FlatExpression::Number(n) => n.clone(),
+        FlatExpression::String(s) => s.clone(),
+        FlatExpression::Identifier(i) => i.clone(),
+        FlatExpression::BinaryOperation {
+            left,
+            operator,
+            right,
+        } => {
+            format!("{} {} {}", left, operator, right)
+        }
+    }
+}
+
+fn find_high_precedence_operation(operators: &[String]) -> Option<usize> {
+    operators.iter().position(|op| op == "*" || op == "/")
+}
+
+fn should_extract_high_precedence(operators: &[String]) -> bool {
+    operators.iter().any(|op| op == "+" || op == "-")
 }
