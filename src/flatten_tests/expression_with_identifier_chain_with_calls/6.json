@@ -1,0 +1,38 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": {
+                        "name": "result_1",
+                        "operation": "Constant"
+                    },
+                    "expression": {
+                        "one": { "Identifier": "func()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": {
+                        "name": "result_2",
+                        "operation": "Constant"
+                    },
+                    "expression": {
+                        "one": { "Identifier": "result_1" },
+                        "two": { "Number": "0d2" },
+                        "arithmetic": "Multiply"
+                    }
+                },
+                {
+                    "definition": { "name": "result", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "result_2" },
+                        "two": { "Number": "0d5" },
+                        "arithmetic": "Add"
+                    }
+                }
+            ]
+        }
+    ]
+}

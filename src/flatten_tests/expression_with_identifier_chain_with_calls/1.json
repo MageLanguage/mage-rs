@@ -1,0 +1,16 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "simple", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "func()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}

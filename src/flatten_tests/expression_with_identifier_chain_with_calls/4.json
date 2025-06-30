@@ -1,0 +1,24 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "i_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "j()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "i", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "i_1()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}

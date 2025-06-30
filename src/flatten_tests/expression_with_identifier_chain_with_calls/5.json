@@ -1,0 +1,24 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "result_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "obj()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "result", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "result_1.method().value" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}

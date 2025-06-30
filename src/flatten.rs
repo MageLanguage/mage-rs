@@ -15,6 +15,9 @@ fn get_node_kind_ids() -> NodeKindIDs {
         definition: language.id_for_node_kind("definition", true),
         expression: language.id_for_node_kind("expression", true),
         identifier_chain: language.id_for_node_kind("identifier_chain", true),
+        identifier: language.id_for_node_kind("identifier", true),
+        call: language.id_for_node_kind("call", true),
+
         definition_operation: language.id_for_node_kind("definition_operation", true),
         arithmetic: language.id_for_node_kind("arithmetic", true),
         variable: language.id_for_node_kind("variable", true),
@@ -34,6 +37,9 @@ struct NodeKindIDs {
     definition: u16,
     expression: u16,
     identifier_chain: u16,
+    identifier: u16,
+    call: u16,
+
     definition_operation: u16,
     arithmetic: u16,
     variable: u16,
@@ -306,6 +312,15 @@ fn flatten_expression(
 
     let mut temporary_counter = 1;
 
+    // Count expression sections to determine if this is a simple expression
+    let section_count = node
+        .children(&mut node.walk())
+        .filter(|child| child.kind_id() == node_kind_ids.expression_section)
+        .count();
+
+    // Force call extraction if there are multiple sections (indicating arithmetic)
+    let force_call_extraction = section_count > 1;
+
     // Collect expression sections from the structured expression
     let mut expression_parts = Vec::new();
     collect_expression_sections(
@@ -316,6 +331,7 @@ fn flatten_expression(
         &mut temporary_counter,
         statement_chain,
         node_kind_ids,
+        force_call_extraction,
     )?;
 
     // Process the expression parts to create binary operations
@@ -340,6 +356,7 @@ fn collect_expression_sections(
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
     node_kind_ids: &NodeKindIDs,
+    force_call_extraction: bool,
 ) -> Result<(), Error> {
     for child in node.children(&mut node.walk()) {
         if child.kind_id() == node_kind_ids.expression_section {
@@ -350,6 +367,7 @@ fn collect_expression_sections(
                 temporary_counter,
                 statement_chain,
                 node_kind_ids,
+                force_call_extraction,
             )?;
             parts.push(expr_part);
         }
@@ -365,6 +383,7 @@ fn process_expression_section(
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
     node_kind_ids: &NodeKindIDs,
+    force_call_extraction: bool,
 ) -> Result<FlatExpression, Error> {
     let mut operators = Vec::new();
     let mut operand = None;
@@ -383,6 +402,7 @@ fn process_expression_section(
                     temporary_counter,
                     statement_chain,
                     node_kind_ids,
+                    force_call_extraction,
                 )?);
             }
             _ => {}
@@ -513,6 +533,7 @@ fn process_variable(
     temporary_counter: &mut usize,
     statement_chain: &mut FlatStatementChain,
     node_kind_ids: &NodeKindIDs,
+    force_call_extraction: bool,
 ) -> Result<FlatExpression, Error> {
     for child in node.children(&mut node.walk()) {
         match child.kind_id() {
@@ -523,10 +544,15 @@ fn process_variable(
                 )));
             }
             id if id == node_kind_ids.identifier_chain => {
-                let id_text = &code[child.start_byte()..child.end_byte()];
-                return Ok(create_variable_expression(FlatVariable::Identifier(
-                    id_text.to_string(),
-                )));
+                return process_identifier_chain(
+                    child,
+                    code,
+                    base_name,
+                    temporary_counter,
+                    statement_chain,
+                    node_kind_ids,
+                    force_call_extraction,
+                );
             }
             id if id == node_kind_ids.string => {
                 let string_text = &code[child.start_byte()..child.end_byte()];
@@ -551,6 +577,7 @@ fn process_variable(
                             temporary_counter,
                             statement_chain,
                             node_kind_ids,
+                            true, // Always force extraction for prioritized expressions
                         )?;
 
                         let flattened_inner = if inner_parts.len() == 1 {
@@ -585,6 +612,204 @@ fn process_variable(
     }
 
     Err(Error::FlattenError("Unknown variable type".to_string()))
+}
+
+// Process identifier chain, extracting function calls into temporary variables
+fn process_identifier_chain(
+    node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+    node_kind_ids: &NodeKindIDs,
+    force_call_extraction: bool,
+) -> Result<FlatExpression, Error> {
+    let mut chain_parts = Vec::new();
+
+    // Collect all identifiers in the chain
+    for child in node.children(&mut node.walk()) {
+        if child.kind_id() == node_kind_ids.identifier {
+            chain_parts.push(child);
+        }
+    }
+
+    if chain_parts.is_empty() {
+        return Err(Error::FlattenError("Empty identifier chain".to_string()));
+    }
+
+    // Only extract calls if there are multiple parts in the chain
+    if chain_parts.len() > 1 {
+        // Find the first call in the chain
+        let mut first_call_index = None;
+        for (i, identifier_node) in chain_parts.iter().enumerate() {
+            if has_call_in_identifier(identifier_node, node_kind_ids)? {
+                first_call_index = Some(i);
+                break;
+            }
+        }
+
+        if let Some(call_index) = first_call_index {
+            // Extract up to and including the first call
+            let temporary_name = format!("{}_{}", base_name, temporary_counter);
+            *temporary_counter += 1;
+
+            // Build the expression up to and including the call
+            let mut call_parts = Vec::new();
+            for i in 0..=call_index {
+                let part_text =
+                    code[chain_parts[i].start_byte()..chain_parts[i].end_byte()].to_string();
+                call_parts.push(part_text);
+            }
+
+            let call_expression = call_parts.join(".");
+
+            let temporary_statement = FlatStatement {
+                definition: Some(FlatDefinition {
+                    name: temporary_name.clone(),
+                    operation: FlatDefinitionOperation::Constant,
+                }),
+                expression: Some(create_variable_expression(FlatVariable::Identifier(
+                    call_expression,
+                ))),
+            };
+            statement_chain.push_statement(temporary_statement);
+
+            // Build the remaining chain with the temporary variable
+            let remaining_parts = &chain_parts[call_index + 1..];
+            if remaining_parts.is_empty() {
+                Ok(create_variable_expression(FlatVariable::Identifier(
+                    temporary_name,
+                )))
+            } else {
+                let mut remaining_parts_text = Vec::new();
+                for identifier_node in remaining_parts {
+                    let part_text =
+                        code[identifier_node.start_byte()..identifier_node.end_byte()].to_string();
+                    remaining_parts_text.push(part_text);
+                }
+
+                let final_identifier =
+                    format!("{}.{}", temporary_name, remaining_parts_text.join("."));
+                Ok(create_variable_expression(FlatVariable::Identifier(
+                    final_identifier,
+                )))
+            }
+        } else {
+            // No calls found in multi-part chain, return as-is
+            let id_text = code[node.start_byte()..node.end_byte()].to_string();
+            Ok(create_variable_expression(FlatVariable::Identifier(
+                id_text,
+            )))
+        }
+    } else {
+        // Single identifier - check if it contains nested calls like j()()
+        if has_nested_calls_in_single_identifier(&chain_parts[0], code, node_kind_ids)? {
+            return process_nested_call(
+                chain_parts[0],
+                code,
+                base_name,
+                temporary_counter,
+                statement_chain,
+                node_kind_ids,
+            );
+        }
+
+        // Check if it contains any calls and extract them only if forced
+        if force_call_extraction && has_call_in_identifier(&chain_parts[0], node_kind_ids)? {
+            let temporary_name = format!("{}_{}", base_name, temporary_counter);
+            *temporary_counter += 1;
+
+            let call_expression =
+                code[chain_parts[0].start_byte()..chain_parts[0].end_byte()].to_string();
+
+            let temporary_statement = FlatStatement {
+                definition: Some(FlatDefinition {
+                    name: temporary_name.clone(),
+                    operation: FlatDefinitionOperation::Constant,
+                }),
+                expression: Some(create_variable_expression(FlatVariable::Identifier(
+                    call_expression,
+                ))),
+            };
+            statement_chain.push_statement(temporary_statement);
+
+            Ok(create_variable_expression(FlatVariable::Identifier(
+                temporary_name,
+            )))
+        } else {
+            // Simple single identifier, return as-is
+            let id_text = code[node.start_byte()..node.end_byte()].to_string();
+            Ok(create_variable_expression(FlatVariable::Identifier(
+                id_text,
+            )))
+        }
+    }
+}
+
+// Check if a single identifier has a call
+fn has_call_in_identifier(
+    identifier_node: &Node,
+    node_kind_ids: &NodeKindIDs,
+) -> Result<bool, Error> {
+    for identifier_child in identifier_node.children(&mut identifier_node.walk()) {
+        if identifier_child.kind_id() == node_kind_ids.call {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+// Check if a single identifier contains nested calls like j()()
+fn has_nested_calls_in_single_identifier(
+    identifier_node: &Node,
+    code: &str,
+    _node_kind_ids: &NodeKindIDs,
+) -> Result<bool, Error> {
+    let id_text = code[identifier_node.start_byte()..identifier_node.end_byte()].to_string();
+    // Simple heuristic: if the identifier contains ")(" it likely has nested calls
+    Ok(id_text.contains(")("))
+}
+
+// Process nested calls like j()() -> j_1 : j(); result : j_1()
+fn process_nested_call(
+    identifier_node: Node,
+    code: &str,
+    base_name: &str,
+    temporary_counter: &mut usize,
+    statement_chain: &mut FlatStatementChain,
+    _node_kind_ids: &NodeKindIDs,
+) -> Result<FlatExpression, Error> {
+    let id_text = code[identifier_node.start_byte()..identifier_node.end_byte()].to_string();
+
+    // Find the first ")(" pattern to split on
+    if let Some(split_pos) = id_text.find(")(") {
+        let first_part = &id_text[..split_pos + 1]; // Include the first ")"
+        let second_part = &id_text[split_pos + 1..]; // Start from "("
+
+        let temporary_name = format!("{}_{}", base_name, temporary_counter);
+        *temporary_counter += 1;
+
+        let temporary_statement = FlatStatement {
+            definition: Some(FlatDefinition {
+                name: temporary_name.clone(),
+                operation: FlatDefinitionOperation::Constant,
+            }),
+            expression: Some(create_variable_expression(FlatVariable::Identifier(
+                first_part.to_string(),
+            ))),
+        };
+        statement_chain.push_statement(temporary_statement);
+
+        let final_identifier = format!("{}{}", temporary_name, second_part);
+        Ok(create_variable_expression(FlatVariable::Identifier(
+            final_identifier,
+        )))
+    } else {
+        // Fallback - return as is
+        Ok(create_variable_expression(FlatVariable::Identifier(
+            id_text,
+        )))
+    }
 }
 
 // Process multiple expression parts into binary operations

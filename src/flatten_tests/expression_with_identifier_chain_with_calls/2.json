@@ -1,0 +1,24 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "x_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "y()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "x", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "x_1" },
+                        "two": { "Number": "0d10" },
+                        "arithmetic": "Add"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -111,3 +111,15 @@ fn test_expression_with_prioritize() -> Result<(), Error> {
 
     Ok(())
 }
+
+#[test]
+fn test_expression_with_identifier_chain_with_calls() -> Result<(), Error> {
+    for pair in test_directory_iterator(
+        "flatten_tests/expression_with_identifier_chain_with_calls",
+        6,
+    ) {
+        test(&pair?)?;
+    }
+
+    Ok(())
+}
