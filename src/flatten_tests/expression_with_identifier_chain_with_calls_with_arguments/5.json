@@ -1,0 +1,56 @@
+{
+    "statement_chains": [
+        {
+            "statements": [
+                {
+                    "definition": { "name": "test_1", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "f()" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test_2", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "e(test_1)" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test_3", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "d(test_2)" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test_4", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "c(test_3)" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test_5", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "b(test_4)" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                },
+                {
+                    "definition": { "name": "test", "operation": "Constant" },
+                    "expression": {
+                        "one": { "Identifier": "a(test_5)" },
+                        "two": null,
+                        "arithmetic": null
+                    }
+                }
+            ]
+        }
+    ]
+}
