@@ -10,7 +10,7 @@ use tree_sitter_mage::LANGUAGE;
 
 use serde::Serialize;
 
-use mage_rs::flatten_tree;
+use mage_rs::process_tree;
 
 #[derive(Debug, Clone, Serialize, clap::ValueEnum)]
 enum ArgumentsOutput {
@@ -40,12 +40,15 @@ fn main() {
             let code = fs::read_to_string(&path).unwrap();
             let tree = parser.parse(code.as_str(), None).unwrap();
 
-            if let Ok(root) = flatten_tree(tree, code.as_str()) {
-                match output {
+            match process_tree(tree, code.as_str()) {
+                Ok(root) => match output {
                     ArgumentsOutput::Text => println!("{:#?}", &root),
                     ArgumentsOutput::Json => {
                         println!("{}", serde_json::to_string(&root).unwrap());
                     }
+                },
+                Err(err) => {
+                    eprintln!("Error processing {}: {:?}", path, err);
                 }
             }
         }
@@ -56,12 +59,15 @@ fn main() {
                 if let Ok(code) = line {
                     let tree = parser.parse(code.as_str(), None).unwrap();
 
-                    if let Ok(root) = flatten_tree(tree, code.as_str()) {
-                        match output {
+                    match process_tree(tree, code.as_str()) {
+                        Ok(root) => match output {
                             ArgumentsOutput::Text => println!("{:#?}", &root),
                             ArgumentsOutput::Json => {
                                 println!("{}", serde_json::to_string(&root).unwrap())
                             }
+                        },
+                        Err(err) => {
+                            eprintln!("Error processing input: {:?}", err);
                         }
                     }
                 }

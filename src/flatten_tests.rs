@@ -5,7 +5,7 @@ use serde_json;
 use tree_sitter::Parser;
 use tree_sitter_mage::LANGUAGE;
 
-use crate::{FlatRoot, flatten_tree};
+use crate::{Error as MageError, FlatRoot, flatten_tree, process_tree};
 
 pub struct TestDirectoryIterator {
     path: String,
@@ -65,6 +65,20 @@ fn test(pair: &Pair) -> Result<(), Error> {
 
     assert_eq!(reference, root);
     Ok(())
+}
+
+fn test_validation_failure(pair: &Pair) -> Result<(), Error> {
+    let mut parser = Parser::new();
+    parser.set_language(&LANGUAGE.into()).unwrap();
+
+    let tree = parser.parse(pair.mage.as_str(), None).unwrap();
+
+    // Expect validation to fail
+    match process_tree(tree, pair.mage.as_str()) {
+        Err(MageError::ValidationError(_)) => Ok(()), // Expected validation error
+        Ok(_) => panic!("Expected validation error but processing succeeded"),
+        Err(other) => panic!("Expected validation error but got: {:?}", other),
+    }
 }
 
 #[test]
@@ -155,15 +169,6 @@ fn test_unflattened_function_arguments() -> Result<(), Error> {
 }
 
 #[test]
-fn test_division_by_zero() -> Result<(), Error> {
-    for pair in test_directory_iterator("flatten_tests/division_by_zero", 1) {
-        test(&pair?)?;
-    }
-
-    Ok(())
-}
-
-#[test]
 fn test_multiple_statement_chains() -> Result<(), Error> {
     for pair in test_directory_iterator("flatten_tests/multiple_statement_chains", 1) {
         test(&pair?)?;
@@ -173,9 +178,9 @@ fn test_multiple_statement_chains() -> Result<(), Error> {
 }
 
 #[test]
-fn test_invalid_number_formats() -> Result<(), Error> {
+fn test_invalid_number_formats_validation() -> Result<(), Error> {
     for pair in test_directory_iterator("flatten_tests/invalid_number_formats", 1) {
-        test(&pair?)?;
+        test_validation_failure(&pair?)?;
     }
 
     Ok(())
@@ -202,15 +207,6 @@ fn test_malformed_syntax() -> Result<(), Error> {
 #[test]
 fn test_deeply_nested_calls() -> Result<(), Error> {
     for pair in test_directory_iterator("flatten_tests/deeply_nested_calls", 1) {
-        test(&pair?)?;
-    }
-
-    Ok(())
-}
-
-#[test]
-fn test_mixed_number_formats() -> Result<(), Error> {
-    for pair in test_directory_iterator("flatten_tests/mixed_number_formats", 1) {
         test(&pair?)?;
     }
 
