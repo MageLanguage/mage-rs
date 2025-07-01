@@ -45,7 +45,7 @@ struct NodeKindIDs {
     expression_section: u16,
 }
 
-pub fn validate_tree(tree: Tree, code: &str) -> Result<(), Error> {
+pub fn validate_tree(tree: &Tree, code: &str) -> Result<(), Error> {
     let kinds = get_node_kind_ids();
     validate_node(tree.root_node(), code, &kinds).map_err(|e| Error::ValidationError(e))
 }

@@ -25,11 +25,7 @@ pub enum Error {
     FlattenError(String),
 }
 
-/// Process a tree by validating it first, then flattening it
-/// This is the recommended way to process Mage code
-pub fn process_tree(tree: Tree, code: &str) -> Result<FlatRoot, Error> {
-    // Validate the tree first to catch errors early
-    validate_tree(tree.clone(), code)?;
-    // If validation passes, proceed with flattening
+pub fn process_tree(tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
+    validate_tree(tree, code)?;
     flatten_tree(tree, code)
 }

@@ -61,7 +61,7 @@ fn test(pair: &Pair) -> Result<(), Error> {
     parser.set_language(&LANGUAGE.into()).unwrap();
 
     let tree = parser.parse(pair.mage.as_str(), None).unwrap();
-    let root = flatten_tree(tree, pair.mage.as_str()).unwrap();
+    let root = flatten_tree(&tree, pair.mage.as_str()).unwrap();
 
     assert_eq!(reference, root);
     Ok(())
@@ -74,7 +74,7 @@ fn test_validation_failure(pair: &Pair) -> Result<(), Error> {
     let tree = parser.parse(pair.mage.as_str(), None).unwrap();
 
     // Expect validation to fail
-    match process_tree(tree, pair.mage.as_str()) {
+    match process_tree(&tree, pair.mage.as_str()) {
         Err(MageError::ValidationError(_)) => Ok(()), // Expected validation error
         Ok(_) => panic!("Expected validation error but processing succeeded"),
         Err(other) => panic!("Expected validation error but got: {:?}", other),

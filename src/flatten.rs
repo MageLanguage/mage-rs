@@ -194,12 +194,12 @@ fn expression_to_string_simple(expr: &FlatExpression) -> String {
     }
 }
 
-pub fn flatten_tree(tree: Tree, code: &str) -> Result<FlatRoot, Error> {
+pub fn flatten_tree(tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
     let kinds = get_node_kind_ids();
-    flatten_node(tree.root_node(), code, &kinds)
+    flatten_node(&tree.root_node(), code, &kinds)
 }
 
-fn flatten_node(node: Node, code: &str, node_kind_ids: &NodeKindIDs) -> Result<FlatRoot, Error> {
+fn flatten_node(node: &Node, code: &str, node_kind_ids: &NodeKindIDs) -> Result<FlatRoot, Error> {
     let mut root = FlatRoot {
         statement_chains: Vec::new(),
     };
@@ -207,7 +207,7 @@ fn flatten_node(node: Node, code: &str, node_kind_ids: &NodeKindIDs) -> Result<F
     if node.kind_id() == node_kind_ids.source_file || node.kind_id() == node_kind_ids.source {
         for child in node.children(&mut node.walk()) {
             if child.kind_id() == node_kind_ids.statement_chain {
-                flatten_statement_chain(child, code, &mut root, node_kind_ids)?;
+                flatten_statement_chain(&child, code, &mut root, node_kind_ids)?;
             }
         }
     }
@@ -216,7 +216,7 @@ fn flatten_node(node: Node, code: &str, node_kind_ids: &NodeKindIDs) -> Result<F
 }
 
 fn flatten_statement_chain(
-    node: Node,
+    node: &Node,
     code: &str,
     root: &mut FlatRoot,
     node_kind_ids: &NodeKindIDs,
@@ -227,7 +227,7 @@ fn flatten_statement_chain(
 
     for child in node.children(&mut node.walk()) {
         if child.kind_id() == node_kind_ids.statement {
-            flatten_statement(child, code, &mut statement_chain, node_kind_ids)?
+            flatten_statement(&child, code, &mut statement_chain, node_kind_ids)?
         }
     }
 
@@ -236,7 +236,7 @@ fn flatten_statement_chain(
 }
 
 fn flatten_statement(
-    node: Node,
+    node: &Node,
     code: &str,
     statement_chain: &mut FlatStatementChain,
     node_kind_ids: &NodeKindIDs,
@@ -249,10 +249,10 @@ fn flatten_statement(
     for child in node.children(&mut node.walk()) {
         match child.kind_id() {
             id if id == node_kind_ids.definition => {
-                flatten_definition(child, code, statement_chain, &mut statement, node_kind_ids)?
+                flatten_definition(&child, code, statement_chain, &mut statement, node_kind_ids)?
             }
             id if id == node_kind_ids.expression => {
-                flatten_expression(child, code, statement_chain, &mut statement, node_kind_ids)?
+                flatten_expression(&child, code, statement_chain, &mut statement, node_kind_ids)?
             }
             _ => (),
         }
@@ -263,7 +263,7 @@ fn flatten_statement(
 }
 
 fn flatten_definition(
-    node: Node,
+    node: &Node,
     code: &str,
     _statement_chain: &mut FlatStatementChain,
     statement: &mut FlatStatement,
@@ -298,7 +298,7 @@ fn flatten_definition(
 }
 
 fn flatten_expression(
-    node: Node,
+    node: &Node,
     code: &str,
     statement_chain: &mut FlatStatementChain,
     statement: &mut FlatStatement,
@@ -349,7 +349,7 @@ fn flatten_expression(
 
 // Collect expression sections from the structured expression
 fn collect_expression_sections(
-    node: Node,
+    node: &Node,
     code: &str,
     parts: &mut Vec<FlatExpression>,
     base_name: &str,
@@ -361,7 +361,7 @@ fn collect_expression_sections(
     for child in node.children(&mut node.walk()) {
         if child.kind_id() == node_kind_ids.expression_section {
             let expr_part = process_expression_section(
-                child,
+                &child,
                 code,
                 base_name,
                 temporary_counter,
@@ -377,7 +377,7 @@ fn collect_expression_sections(
 
 // Process a single expression section
 fn process_expression_section(
-    node: Node,
+    node: &Node,
     code: &str,
     base_name: &str,
     temporary_counter: &mut usize,
@@ -396,7 +396,7 @@ fn process_expression_section(
             }
             id if id == node_kind_ids.variable => {
                 operand = Some(process_variable(
-                    child,
+                    &child,
                     code,
                     base_name,
                     temporary_counter,
@@ -527,7 +527,7 @@ fn expression_to_string(expr: &FlatExpression) -> String {
 
 // Process a variable node (number, identifier_chain, prioritize, etc.)
 fn process_variable(
-    node: Node,
+    node: &Node,
     code: &str,
     base_name: &str,
     temporary_counter: &mut usize,
@@ -545,7 +545,7 @@ fn process_variable(
             }
             id if id == node_kind_ids.identifier_chain => {
                 return process_identifier_chain(
-                    child,
+                    &child,
                     code,
                     base_name,
                     temporary_counter,
@@ -570,7 +570,7 @@ fn process_variable(
                     if inner_child.kind_id() == node_kind_ids.expression {
                         let mut inner_parts = Vec::new();
                         collect_expression_sections(
-                            inner_child,
+                            &inner_child,
                             code,
                             &mut inner_parts,
                             base_name,
@@ -616,7 +616,7 @@ fn process_variable(
 
 // Process identifier chain, extracting function calls into temporary variables
 fn process_identifier_chain(
-    node: Node,
+    node: &Node,
     code: &str,
     base_name: &str,
     temporary_counter: &mut usize,
@@ -655,7 +655,7 @@ fn process_identifier_chain(
 
             // Process the call with its arguments
             let processed_call = process_call_with_arguments(
-                chain_parts[call_index],
+                &chain_parts[call_index],
                 code,
                 base_name,
                 temporary_counter,
@@ -699,7 +699,7 @@ fn process_identifier_chain(
                 let mut suffix_parts = Vec::new();
                 for identifier_node in remaining_parts {
                     let processed_part = process_identifier_part_with_calls(
-                        *identifier_node,
+                        identifier_node,
                         code,
                         base_name,
                         temporary_counter,
@@ -738,7 +738,7 @@ fn process_identifier_chain(
         // Check if it contains any calls and extract them only if forced
         if force_call_extraction && has_call_in_identifier(&chain_parts[0], node_kind_ids)? {
             let processed_call = process_call_with_arguments(
-                chain_parts[0],
+                &chain_parts[0],
                 code,
                 base_name,
                 temporary_counter,
@@ -842,7 +842,7 @@ fn process_nested_call(
 
 // Process a single identifier part that may contain calls with arguments
 fn process_identifier_part_with_calls(
-    identifier_node: Node,
+    identifier_node: &Node,
     code: &str,
     base_name: &str,
     temporary_counter: &mut usize,
@@ -867,7 +867,7 @@ fn process_identifier_part_with_calls(
 
 // Process a call with its arguments, extracting nested calls from arguments
 fn process_call_with_arguments(
-    identifier_node: Node,
+    identifier_node: &Node,
     code: &str,
     base_name: &str,
     temporary_counter: &mut usize,
@@ -879,7 +879,7 @@ fn process_call_with_arguments(
     for identifier_child in identifier_node.children(&mut identifier_node.walk()) {
         if identifier_child.kind_id() == node_kind_ids.call {
             return process_call_node(
-                identifier_child,
+                &identifier_child,
                 code,
                 base_name,
                 temporary_counter,
@@ -895,7 +895,7 @@ fn process_call_with_arguments(
 
 // Process a call node, handling arguments that may contain nested calls
 fn process_call_node(
-    call_node: Node,
+    call_node: &Node,
     code: &str,
     base_name: &str,
     temporary_counter: &mut usize,
@@ -911,7 +911,7 @@ fn process_call_node(
         if call_child.kind_id() == node_kind_ids.identifier {
             // Process the identifier part (which might itself be a call)
             call_identifier = process_identifier_part_with_calls(
-                call_child,
+                &call_child,
                 code,
                 base_name,
                 temporary_counter,
@@ -923,7 +923,7 @@ fn process_call_node(
         } else if call_child.kind_id() == node_kind_ids.expression {
             // Process expression argument, extracting any nested calls
             let processed_arg = process_call_argument(
-                call_child,
+                &call_child,
                 code,
                 base_name,
                 temporary_counter,
@@ -952,7 +952,7 @@ fn process_call_node(
 
 // Process a call argument (expression), extracting any nested calls
 fn process_call_argument(
-    expression_node: Node,
+    expression_node: &Node,
     code: &str,
     base_name: &str,
     temporary_counter: &mut usize,
@@ -963,7 +963,7 @@ fn process_call_argument(
     let mut expression_parts = Vec::new();
 
     collect_expression_sections(
-        expression_node,
+        &expression_node,
         code,
         &mut expression_parts,
         base_name,
@@ -1187,8 +1187,6 @@ fn process_expression_parts(
         )))
     }
 }
-
-// Helper functions
 
 fn find_high_precedence_operation(operators: &[String]) -> Option<usize> {
     operators.iter().position(|op| op == "*" || op == "/")
