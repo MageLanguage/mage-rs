@@ -1,8 +1,5 @@
 use tree_sitter::Tree;
 
-mod validate;
-pub use validate::*;
-
 mod flatten;
 pub use flatten::*;
 
@@ -26,6 +23,5 @@ pub enum Error {
 }
 
 pub fn process_tree(tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
-    validate_tree(tree, code)?;
     flatten_tree(tree, code)
 }

@@ -14,6 +14,7 @@ pub struct TestDirectoryIterator {
 }
 
 pub struct Pair {
+    current: usize,
     mage: String,
     json: String,
 }
@@ -45,6 +46,7 @@ impl Iterator for TestDirectoryIterator {
             };
 
             Some(Ok(Pair {
+                current: self.current,
                 mage: mage,
                 json: json,
             }))
@@ -63,7 +65,7 @@ fn test(pair: &Pair) -> Result<(), Error> {
     let tree = parser.parse(pair.mage.as_str(), None).unwrap();
     let root = flatten_tree(&tree, pair.mage.as_str()).unwrap();
 
-    assert_eq!(reference, root);
+    assert_eq!(reference, root, "current: {}", pair.current);
     Ok(())
 }
 
