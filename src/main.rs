@@ -30,17 +30,17 @@ struct Arguments {
 fn main() {
     let Arguments { path, output } = Arguments::parse();
 
+    let language = TreeSitterLanguage::from(LANGUAGE);
+
     let mut parser = TreeSitterParser::new();
-    parser
-        .set_language(&TreeSitterLanguage::from(LANGUAGE))
-        .unwrap();
+    parser.set_language(&language).unwrap();
 
     match path {
         Some(path) => {
             let code = fs::read_to_string(&path).unwrap();
             let tree = parser.parse(code.as_str(), None).unwrap();
 
-            match process_tree(&tree, code.as_str()) {
+            match process_tree(&language, &tree, code.as_str()) {
                 Ok(root) => match output {
                     ArgumentsOutput::Text => println!("{:#?}", &root),
                     ArgumentsOutput::Json => {
@@ -59,7 +59,7 @@ fn main() {
                 if let Ok(code) = line {
                     let tree = parser.parse(code.as_str(), None).unwrap();
 
-                    match process_tree(&tree, code.as_str()) {
+                    match process_tree(&language, &tree, code.as_str()) {
                         Ok(root) => match output {
                             ArgumentsOutput::Text => println!("{:#?}", &root),
                             ArgumentsOutput::Json => {

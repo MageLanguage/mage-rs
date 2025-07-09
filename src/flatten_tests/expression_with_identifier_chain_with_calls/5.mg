@@ -1,1 +1,0 @@
-result : obj().method().value;
