@@ -61,7 +61,6 @@ pub fn flatten_tree(node_kinds: &NodeKinds, tree: &Tree, code: &str) -> Result<F
     })
 }
 
-/// Depth-first walk delegating semantics to `FlatBuilder`.
 fn flatten_node<'a>(
     node_kinds: &NodeKinds,
     node: Node<'a>,
@@ -83,6 +82,8 @@ fn flatten_node<'a>(
         for child in node.named_children(&mut node.walk()) {
             flatten_node(node_kinds, child, code, &builder)?;
         }
+
+        builder.build();
     } else if kind_id == node_kinds.decimal {
         builder.decimal(text.to_string());
     } else if kind_id == node_kinds.add {
@@ -96,94 +97,100 @@ fn flatten_node<'a>(
 
 #[derive(Clone)]
 pub struct FlatBuilder {
-    sink: Rc<RefCell<Vec<FlatInstruction>>>,
-    ctx: Context,
+    context: Context,
+    instructions: Rc<RefCell<Vec<FlatInstruction>>>,
 }
 
 #[derive(Clone)]
 enum Context {
     Root,
-    Additive(RefCell<AdditiveState>),
+    Additive(RefCell<Additive>),
 }
 
 #[derive(Default, Clone)]
-struct AdditiveState {
-    left: Option<FlatOperand>,
-    op: Option<FlatOperation>,
-    right: Option<FlatOperand>,
-}
-
-impl AdditiveState {
-    fn push_if_ready(&mut self, sink: &Rc<RefCell<Vec<FlatInstruction>>>) {
-        if let (Some(lhs), Some(op), Some(rhs)) = (&self.left, &self.op, &self.right) {
-            sink.borrow_mut().push(FlatInstruction {
-                operand_1: lhs.clone(),
-                operand_2: rhs.clone(),
-                operation: op.clone(),
-            });
-
-            self.left = None;
-            self.op = None;
-            self.right = None;
-        }
-    }
+struct Additive {
+    operand_1: Option<FlatOperand>,
+    operand_2: Option<FlatOperand>,
+    operation: Option<FlatOperation>,
 }
 
 impl FlatBuilder {
-    fn root(sink: Rc<RefCell<Vec<FlatInstruction>>>) -> Self {
+    fn root(instructions: Rc<RefCell<Vec<FlatInstruction>>>) -> Self {
         Self {
-            sink,
-            ctx: Context::Root,
+            context: Context::Root,
+            instructions: instructions,
         }
     }
 
     pub fn source(&self) -> Self {
         Self {
-            sink: self.sink.clone(),
-            ctx: Context::Root,
+            context: Context::Root,
+            instructions: self.instructions.clone(),
         }
     }
 
     pub fn additive(&self) -> Self {
         Self {
-            sink: self.sink.clone(),
-            ctx: Context::Additive(RefCell::new(AdditiveState::default())),
+            context: Context::Additive(RefCell::new(Additive::default())),
+            instructions: self.instructions.clone(),
         }
     }
 
     pub fn decimal(&self, text: String) {
         let operand = FlatOperand::Number(text);
 
-        if let Context::Additive(ref state_cell) = self.ctx {
-            let mut st = state_cell.borrow_mut();
+        if let Context::Additive(ref additive) = self.context {
+            let mut additive = additive.borrow_mut();
 
-            if st.left.is_none() {
-                st.left = Some(operand);
+            if additive.operand_1.is_none() {
+                additive.operand_1 = Some(operand);
+            } else if additive.operand_2.is_none() {
+                additive.operand_2 = Some(operand);
             } else {
-                st.right = Some(operand);
+                unreachable!()
             }
-
-            st.push_if_ready(&self.sink);
         }
     }
 
     pub fn add(&self) {
-        if let Context::Additive(ref state_cell) = self.ctx {
-            let mut st = state_cell.borrow_mut();
+        if let Context::Additive(ref additive) = self.context {
+            let mut additive = additive.borrow_mut();
 
-            st.op = Some(FlatOperation::Add);
-
-            st.push_if_ready(&self.sink);
+            if additive.operation.is_none() {
+                additive.operation = Some(FlatOperation::Add);
+            } else {
+                unreachable!()
+            }
         }
     }
 
     pub fn subtract(&self) {
-        if let Context::Additive(ref state_cell) = self.ctx {
-            let mut st = state_cell.borrow_mut();
+        if let Context::Additive(ref additive) = self.context {
+            let mut additive = additive.borrow_mut();
 
-            st.op = Some(FlatOperation::Subtract);
+            if additive.operation.is_none() {
+                additive.operation = Some(FlatOperation::Subtract);
+            } else {
+                unreachable!()
+            }
+        }
+    }
 
-            st.push_if_ready(&self.sink);
+    pub fn build(&self) {
+        if let Context::Additive(ref additive) = self.context {
+            let additive = additive.borrow_mut();
+
+            if let (Some(operand_1), Some(operand_2), Some(operation)) = (
+                &additive.operand_1,
+                &additive.operand_2,
+                &additive.operation,
+            ) {
+                self.instructions.borrow_mut().push(FlatInstruction {
+                    operand_1: operand_1.clone(),
+                    operand_2: operand_2.clone(),
+                    operation: operation.clone(),
+                });
+            }
         }
     }
 }
