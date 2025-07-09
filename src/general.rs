@@ -1,42 +1,40 @@
 use tree_sitter::{Language, Tree};
 
-use crate::{flatten_tree, validate_tree};
+use crate::{FlatRoot, flatten_tree};
 
 #[derive(Debug)]
 pub enum Error {
     FlattenError(String),
 }
 
-pub fn process_tree(language: &Language, tree: &Tree, code: &str) -> Result<(), Error> {
+pub fn process_tree(language: &Language, tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
     let node_kinds = NodeKinds::new(language);
-    validate_tree(&node_kinds, tree, code)?;
-    flatten_tree(&node_kinds, tree, code)?;
-    Ok(())
+    flatten_tree(&node_kinds, tree, code)
 }
 
 pub struct NodeKinds {
-    source_file: u16,
-    source: u16,
-    parenthesize: u16,
-    member: u16,
-    call: u16,
-    multiplicative: u16,
-    additive: u16,
-    comparison: u16,
-    logical: u16,
-    assign: u16,
+    pub source_file: u16,
+    pub source: u16,
+    pub parenthesize: u16,
+    pub member: u16,
+    pub call: u16,
+    pub multiplicative: u16,
+    pub additive: u16,
+    pub comparison: u16,
+    pub logical: u16,
+    pub assign: u16,
 
-    binary: u16,
-    octal: u16,
-    decimal: u16,
-    hex: u16,
+    pub binary: u16,
+    pub octal: u16,
+    pub decimal: u16,
+    pub hex: u16,
 
-    single_quoted: u16,
-    double_quoted: u16,
-    escape: u16,
-    raw: u16,
+    pub single_quoted: u16,
+    pub double_quoted: u16,
+    pub escape: u16,
+    pub raw: u16,
 
-    identifier: u16,
+    pub identifier: u16,
 }
 
 impl NodeKinds {
