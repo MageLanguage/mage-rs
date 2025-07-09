@@ -11,8 +11,6 @@ pub struct FlatRoot {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatInstruction {
-    destination: FlatOperand,
-    destination_type: FlatOperation,
     operand_1: FlatOperand,
     operand_2: FlatOperand,
     operation: FlatOperation,
@@ -52,29 +50,60 @@ pub enum FlatOperation {
     Variable,
 }
 
-pub fn flatten_tree(node_kinds: &NodeKinds, tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
-    let root = FlatRoot {
-        instructions: Vec::new(),
-    };
-    flatten_node(node_kinds, tree.root_node(), code, &root)?;
-    Ok(root)
+pub fn flatten_tree(node_kinds: &NodeKinds, tree: &Tree, code: &str) -> Result<(), Error> {
+    let builder = FlatBuilder {};
+
+    flatten_node(node_kinds, tree.root_node(), code, &builder)?;
+
+    Ok(())
 }
 
 fn flatten_node<'a>(
     node_kinds: &NodeKinds,
     node: Node<'a>,
     code: &'a str,
-    root: &FlatRoot,
+    builder: &FlatBuilder,
 ) -> Result<(), Error> {
     let kind_id = node.kind_id();
+    let text = &code[node.start_byte()..node.end_byte()];
 
-    match kind_id {
-        source_file if source_file == node_kinds.source_file => {
-            //
+    if kind_id == node_kinds.source_file {
+        let builder = builder.source();
+
+        for child in node.named_children(&mut node.walk()) {
+            flatten_node(node_kinds, child, code, &builder)?;
         }
+    } else if kind_id == node_kinds.additive {
+        let builder = builder.additive();
 
-        _ => (),
+        for child in node.named_children(&mut node.walk()) {
+            flatten_node(node_kinds, child, code, &builder)?;
+        }
+    } else if kind_id == node_kinds.decimal {
+        builder.decimal(text.to_string());
+    } else if kind_id == node_kinds.add {
+        builder.add();
+    } else if kind_id == node_kinds.substract {
+        builder.substract();
     }
 
     Ok(())
+}
+
+pub struct FlatBuilder {}
+
+impl FlatBuilder {
+    pub fn source(&self) -> FlatBuilder {
+        return FlatBuilder {};
+    }
+
+    pub fn additive(&self) -> FlatBuilder {
+        return FlatBuilder {};
+    }
+
+    pub fn decimal(&self, text: String) {}
+
+    pub fn add(&self) {}
+
+    pub fn substract(&self) {}
 }

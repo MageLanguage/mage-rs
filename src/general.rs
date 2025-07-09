@@ -1,13 +1,13 @@
 use tree_sitter::{Language, Tree};
 
-use crate::{FlatRoot, flatten_tree};
+use crate::flatten_tree;
 
 #[derive(Debug)]
 pub enum Error {
     FlattenError(String),
 }
 
-pub fn process_tree(language: &Language, tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
+pub fn process_tree(language: &Language, tree: &Tree, code: &str) -> Result<(), Error> {
     let node_kinds = NodeKinds::new(language);
     flatten_tree(&node_kinds, tree, code)
 }
@@ -35,6 +35,9 @@ pub struct NodeKinds {
     pub raw: u16,
 
     pub identifier: u16,
+
+    pub add: u16,
+    pub substract: u16,
 }
 
 impl NodeKinds {
@@ -59,6 +62,8 @@ impl NodeKinds {
             escape: language.id_for_node_kind("escape", true),
             raw: language.id_for_node_kind("raw", true),
             identifier: language.id_for_node_kind("identifier", true),
+            add: language.id_for_node_kind("add", true),
+            substract: language.id_for_node_kind("substract", true),
         }
     }
 }
