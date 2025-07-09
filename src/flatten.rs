@@ -51,13 +51,13 @@ pub enum FlatOperation {
 }
 
 pub fn flatten_tree(node_kinds: &NodeKinds, tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
-    let shared_instr: Rc<RefCell<Vec<FlatInstruction>>> = Rc::new(RefCell::new(Vec::new()));
+    let instructions: Rc<RefCell<Vec<FlatInstruction>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let builder = FlatBuilder::root(shared_instr.clone());
+    let builder = FlatBuilder::root(instructions.clone());
     flatten_node(node_kinds, tree.root_node(), code, &builder)?;
 
     Ok(FlatRoot {
-        instructions: shared_instr.borrow().clone(),
+        instructions: instructions.borrow().clone(),
     })
 }
 

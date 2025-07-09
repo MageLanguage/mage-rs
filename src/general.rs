@@ -38,6 +38,9 @@ pub struct NodeKinds {
 
     pub add: u16,
     pub subtract: u16,
+
+    pub constant: u16,
+    pub variable: u16,
 }
 
 impl NodeKinds {
@@ -64,6 +67,8 @@ impl NodeKinds {
             identifier: language.id_for_node_kind("identifier", true),
             add: language.id_for_node_kind("add", true),
             subtract: language.id_for_node_kind("subtract", true),
+            constant: language.id_for_node_kind("constant", true),
+            variable: language.id_for_node_kind("variable", true),
         }
     }
 }
