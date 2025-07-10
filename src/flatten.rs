@@ -51,13 +51,12 @@ pub enum FlatOperation {
 }
 
 pub fn flatten_tree(node_kinds: &NodeKinds, tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
-    let instructions: Rc<RefCell<Vec<FlatInstruction>>> = Rc::new(RefCell::new(Vec::new()));
+    let mut builder = FlatBuilder::root(Rc::from(RefCell::new(Vec::new())));
 
-    let builder = FlatBuilder::root(instructions.clone());
-    flatten_node(node_kinds, tree.root_node(), code, &builder)?;
+    flatten_node(node_kinds, tree.root_node(), code, &mut builder)?;
 
     Ok(FlatRoot {
-        instructions: instructions.borrow().clone(),
+        instructions: builder.instructions.borrow().to_owned(),
     })
 }
 
@@ -65,22 +64,22 @@ fn flatten_node<'a>(
     node_kinds: &NodeKinds,
     node: Node<'a>,
     code: &'a str,
-    builder: &FlatBuilder,
+    builder: &mut FlatBuilder,
 ) -> Result<(), Error> {
     let kind_id = node.kind_id();
     let text = &code[node.start_byte()..node.end_byte()];
 
     if kind_id == node_kinds.source_file {
-        let builder = builder.source();
+        let mut builder = builder.source();
 
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(node_kinds, child, code, &builder)?;
+            flatten_node(node_kinds, child, code, &mut builder)?;
         }
     } else if kind_id == node_kinds.additive {
-        let builder = builder.additive();
+        let mut builder = builder.additive();
 
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(node_kinds, child, code, &builder)?;
+            flatten_node(node_kinds, child, code, &mut builder)?;
         }
 
         builder.build();
@@ -95,7 +94,6 @@ fn flatten_node<'a>(
     Ok(())
 }
 
-#[derive(Clone)]
 pub struct FlatBuilder {
     context: Context,
     instructions: Rc<RefCell<Vec<FlatInstruction>>>,
