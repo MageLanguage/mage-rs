@@ -60,11 +60,11 @@ pub fn flatten_tree(node_kinds: &NodeKinds, tree: &Tree, code: &str) -> Result<F
     })
 }
 
-fn flatten_node<'a>(
+fn flatten_node(
     node_kinds: &NodeKinds,
-    node: Node<'a>,
-    code: &'a str,
-    builder: &mut FlatBuilder,
+    node: Node,
+    code: &str,
+    builder: &FlatBuilder,
 ) -> Result<(), Error> {
     let kind_id = node.kind_id();
     let text = &code[node.start_byte()..node.end_byte()];
