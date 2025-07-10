@@ -90,8 +90,20 @@ pub trait FlatBuilder {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatKey {
+    offset: usize,
+    kind: FlatKeyKind,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum FlatKeyKind {
+    Constant,
+    Variable,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatSource {
-    pub keys: HashMap<String, usize>,
+    pub keys: HashMap<String, FlatKey>,
     pub expressions: Vec<FlatExpression>,
 }
 
@@ -106,7 +118,7 @@ impl FlatSource {
 
 impl FlatBuilder for FlatSource {
     fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
-        self.expressions.push(expression);
+        self.expressions.push(expression.clone());
         Ok(())
     }
 
@@ -156,8 +168,6 @@ pub struct FlatAssign {
 
 impl FlatBuilder for FlatAssign {
     fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
-        println!("1234, {:?}", expression);
-
         if self.one.is_none() {
             self.one = Some(Box::new(expression));
             return Ok(());

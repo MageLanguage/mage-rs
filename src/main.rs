@@ -41,10 +41,10 @@ fn main() {
             let tree = parser.parse(code.as_str(), None).unwrap();
 
             match process_tree(&language, tree, code.as_str()) {
-                Ok(root) => match output {
-                    ArgumentsOutput::Text => println!("{:#?}", &root),
+                Ok(source) => match output {
+                    ArgumentsOutput::Text => println!("{:#?}", &source),
                     ArgumentsOutput::Json => {
-                        println!("{}", serde_json::to_string(&root).unwrap());
+                        println!("{}", serde_json::to_string(&source).unwrap());
                     }
                 },
                 Err(err) => {
@@ -60,10 +60,10 @@ fn main() {
                     let tree = parser.parse(code.as_str(), None).unwrap();
 
                     match process_tree(&language, tree, code.as_str()) {
-                        Ok(root) => match output {
-                            ArgumentsOutput::Text => println!("{:#?}", &root),
+                        Ok(source) => match output {
+                            ArgumentsOutput::Text => println!("{:#?}", &source),
                             ArgumentsOutput::Json => {
-                                println!("{}", serde_json::to_string(&root).unwrap())
+                                println!("{}", serde_json::to_string(&source).unwrap())
                             }
                         },
                         Err(err) => {

@@ -7,12 +7,11 @@ pub enum Error {
     FlattenError(String),
 }
 
-pub fn process_tree(language: &Language, tree: Tree, code: &str) -> Result<(), Error> {
+pub fn process_tree(language: &Language, tree: Tree, code: &str) -> Result<FlatSource, Error> {
     let mut source = FlatSource::new();
     let node_kinds = NodeKinds::new(language);
     flatten_tree(&mut source, &node_kinds, tree, code)?;
-    println!("{:#?}", source);
-    Ok(())
+    Ok(source)
 }
 
 pub struct NodeKinds {
