@@ -1,194 +1,180 @@
+use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, rc::Rc};
 use tree_sitter::{Node, Tree};
 
 use crate::{Error, NodeKinds};
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatRoot {
-    pub instructions: Vec<FlatInstruction>,
+pub fn flatten_tree<Builder: FlatBuilder>(
+    builder: &mut Builder,
+    node_kinds: &NodeKinds,
+    tree: Tree,
+    code: &str,
+) -> Result<(), Error> {
+    flatten_node(builder, node_kinds, tree.root_node(), code)
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatInstruction {
-    pub operand_1: FlatOperand,
-    pub operand_2: FlatOperand,
-    pub operation: FlatOperation,
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum FlatOperand {
-    Identifier(String),
-    String(String),
-    Number(String),
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum FlatOperation {
-    Extract,
-
-    Pipe,
-
-    Multiply,
-    Divide,
-    Modulo,
-
-    Add,
-    Subtract,
-
-    Equal,
-    NotEqual,
-    LessThan,
-    GreaterThan,
-    LessEqual,
-    GreaterEqual,
-
-    And,
-    Or,
-
-    Constant,
-    Variable,
-}
-
-pub fn flatten_tree(node_kinds: &NodeKinds, tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
-    let mut builder = FlatBuilder::root(Rc::from(RefCell::new(Vec::new())));
-
-    flatten_node(node_kinds, tree.root_node(), code, &mut builder)?;
-
-    Ok(FlatRoot {
-        instructions: builder.instructions.borrow().to_owned(),
-    })
-}
-
-fn flatten_node(
+pub fn flatten_node<Builder: FlatBuilder>(
+    builder: &mut Builder,
     node_kinds: &NodeKinds,
     node: Node,
     code: &str,
-    builder: &FlatBuilder,
 ) -> Result<(), Error> {
     let kind_id = node.kind_id();
     let text = &code[node.start_byte()..node.end_byte()];
 
     if kind_id == node_kinds.source_file {
-        let mut builder = builder.source();
-
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(node_kinds, child, code, &mut builder)?;
+            flatten_node(builder, node_kinds, child, code)?;
         }
     } else if kind_id == node_kinds.additive {
-        let mut builder = builder.additive();
+        let mut additive = FlatAdditive {
+            one: None,
+            two: None,
+            operator: None,
+        };
 
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(node_kinds, child, code, &mut builder)?;
+            flatten_node(&mut additive, node_kinds, child, code)?;
         }
 
-        builder.build();
-    } else if kind_id == node_kinds.decimal {
-        builder.decimal(text.to_string());
+        builder.expression(FlatExpression::Additive(additive))?
     } else if kind_id == node_kinds.add {
-        builder.add();
+        builder.operator(FlatOperator::Add)?
     } else if kind_id == node_kinds.subtract {
-        builder.subtract();
+        builder.operator(FlatOperator::Subtract)?
+    } else if kind_id == node_kinds.assign {
+        let mut assign = FlatAssign {
+            one: None,
+            two: None,
+            operator: None,
+        };
+
+        for child in node.named_children(&mut node.walk()) {
+            flatten_node(&mut assign, node_kinds, child, code)?;
+        }
+
+        builder.expression(FlatExpression::Assign(assign))?
+    } else if kind_id == node_kinds.constant {
+        builder.operator(FlatOperator::Constant)?
+    } else if kind_id == node_kinds.variable {
+        builder.operator(FlatOperator::Variable)?
+    } else if kind_id == node_kinds.decimal {
+        builder.expression(FlatExpression::Decimal(text.to_string()))?
+    } else if kind_id == node_kinds.identifier {
+        builder.expression(FlatExpression::Identifier(text.to_string()))?
     }
 
     Ok(())
 }
 
-pub struct FlatBuilder {
-    context: Context,
-    instructions: Rc<RefCell<Vec<FlatInstruction>>>,
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum FlatExpression {
+    Additive(FlatAdditive),
+    Assign(FlatAssign),
+    Decimal(String),
+    String(String),
+    Identifier(String),
 }
 
-#[derive(Clone)]
-enum Context {
-    Root,
-    Additive(RefCell<Additive>),
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum FlatOperator {
+    Add,
+    Subtract,
+    Constant,
+    Variable,
 }
 
-#[derive(Default, Clone)]
-struct Additive {
-    operand_1: Option<FlatOperand>,
-    operand_2: Option<FlatOperand>,
-    operation: Option<FlatOperation>,
+pub trait FlatBuilder {
+    fn expression(&mut self, expression: FlatExpression) -> Result<(), Error>;
+    fn operator(&mut self, operator: FlatOperator) -> Result<(), Error>;
 }
 
-impl FlatBuilder {
-    fn root(instructions: Rc<RefCell<Vec<FlatInstruction>>>) -> Self {
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatSource {
+    pub keys: HashMap<String, usize>,
+    pub expressions: Vec<FlatExpression>,
+}
+
+impl FlatSource {
+    pub fn new() -> Self {
         Self {
-            context: Context::Root,
-            instructions: instructions,
+            keys: HashMap::new(),
+            expressions: Vec::new(),
         }
     }
+}
 
-    pub fn source(&self) -> Self {
-        Self {
-            context: Context::Root,
-            instructions: self.instructions.clone(),
-        }
+impl FlatBuilder for FlatSource {
+    fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
+        self.expressions.push(expression);
+        Ok(())
     }
 
-    pub fn additive(&self) -> Self {
-        Self {
-            context: Context::Additive(RefCell::new(Additive::default())),
-            instructions: self.instructions.clone(),
+    fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
+        return Err(Error::FlattenError(
+            "source builder can't receive operators".to_string(),
+        ));
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatAdditive {
+    one: Option<String>,
+    two: Option<String>,
+    operator: Option<FlatOperator>,
+}
+
+impl FlatBuilder for FlatAdditive {
+    fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
+        if self.one.is_none() {
+            self.one = Some(format!("{:?}", expression));
+            return Ok(());
+        } else if self.two.is_none() {
+            self.two = Some(format!("{:?}", expression));
+            return Ok(());
         }
+
+        return Err(Error::FlattenError("both expressions are some".to_string()));
     }
 
-    pub fn decimal(&self, text: String) {
-        let operand = FlatOperand::Number(text);
-
-        if let Context::Additive(ref additive) = self.context {
-            let mut additive = additive.borrow_mut();
-
-            if additive.operand_1.is_none() {
-                additive.operand_1 = Some(operand);
-            } else if additive.operand_2.is_none() {
-                additive.operand_2 = Some(operand);
-            } else {
-                unreachable!()
-            }
+    fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
+        if self.operator.is_none() {
+            self.operator = Some(operator);
+            return Ok(());
         }
+
+        return Err(Error::FlattenError("operator is some".to_string()));
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatAssign {
+    one: Option<String>,
+    two: Option<String>,
+    operator: Option<FlatOperator>,
+}
+
+impl FlatBuilder for FlatAssign {
+    fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
+        println!("1234, {:?}", expression);
+
+        if self.one.is_none() {
+            self.one = Some(format!("{:?}", expression));
+            return Ok(());
+        } else if self.two.is_none() {
+            self.two = Some(format!("{:?}", expression));
+            return Ok(());
+        }
+
+        return Err(Error::FlattenError("both expressions are some".to_string()));
     }
 
-    pub fn add(&self) {
-        if let Context::Additive(ref additive) = self.context {
-            let mut additive = additive.borrow_mut();
-
-            if additive.operation.is_none() {
-                additive.operation = Some(FlatOperation::Add);
-            } else {
-                unreachable!()
-            }
+    fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
+        if self.operator.is_none() {
+            self.operator = Some(operator);
+            return Ok(());
         }
-    }
 
-    pub fn subtract(&self) {
-        if let Context::Additive(ref additive) = self.context {
-            let mut additive = additive.borrow_mut();
-
-            if additive.operation.is_none() {
-                additive.operation = Some(FlatOperation::Subtract);
-            } else {
-                unreachable!()
-            }
-        }
-    }
-
-    pub fn build(&self) {
-        if let Context::Additive(ref additive) = self.context {
-            let additive = additive.borrow_mut();
-
-            if let (Some(operand_1), Some(operand_2), Some(operation)) = (
-                &additive.operand_1,
-                &additive.operand_2,
-                &additive.operation,
-            ) {
-                self.instructions.borrow_mut().push(FlatInstruction {
-                    operand_1: operand_1.clone(),
-                    operand_2: operand_2.clone(),
-                    operation: operation.clone(),
-                });
-            }
-        }
+        return Err(Error::FlattenError("operator is some".to_string()));
     }
 }
