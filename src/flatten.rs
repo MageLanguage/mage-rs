@@ -37,7 +37,7 @@ pub fn flatten_node<Builder: FlatBuilder>(
             flatten_node(&mut additive, node_kinds, child, code)?;
         }
 
-        builder.expression(FlatExpression::Additive(additive))?
+        builder.expression(FlatExpression::Additive(Box::new(additive)))?
     } else if kind_id == node_kinds.add {
         builder.operator(FlatOperator::Add)?
     } else if kind_id == node_kinds.subtract {
@@ -53,7 +53,7 @@ pub fn flatten_node<Builder: FlatBuilder>(
             flatten_node(&mut assign, node_kinds, child, code)?;
         }
 
-        builder.expression(FlatExpression::Assign(assign))?
+        builder.expression(FlatExpression::Assign(Box::new(assign)))?
     } else if kind_id == node_kinds.constant {
         builder.operator(FlatOperator::Constant)?
     } else if kind_id == node_kinds.variable {
@@ -69,8 +69,8 @@ pub fn flatten_node<Builder: FlatBuilder>(
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatExpression {
-    Additive(FlatAdditive),
-    Assign(FlatAssign),
+    Additive(Box<FlatAdditive>),
+    Assign(Box<FlatAssign>),
     Decimal(String),
     String(String),
     Identifier(String),
@@ -119,18 +119,18 @@ impl FlatBuilder for FlatSource {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatAdditive {
-    one: Option<String>,
-    two: Option<String>,
+    one: Option<Box<FlatExpression>>,
+    two: Option<Box<FlatExpression>>,
     operator: Option<FlatOperator>,
 }
 
 impl FlatBuilder for FlatAdditive {
     fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
         if self.one.is_none() {
-            self.one = Some(format!("{:?}", expression));
+            self.one = Some(Box::new(expression));
             return Ok(());
         } else if self.two.is_none() {
-            self.two = Some(format!("{:?}", expression));
+            self.two = Some(Box::new(expression));
             return Ok(());
         }
 
@@ -149,8 +149,8 @@ impl FlatBuilder for FlatAdditive {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatAssign {
-    one: Option<String>,
-    two: Option<String>,
+    one: Option<Box<FlatExpression>>,
+    two: Option<Box<FlatExpression>>,
     operator: Option<FlatOperator>,
 }
 
@@ -159,10 +159,10 @@ impl FlatBuilder for FlatAssign {
         println!("1234, {:?}", expression);
 
         if self.one.is_none() {
-            self.one = Some(format!("{:?}", expression));
+            self.one = Some(Box::new(expression));
             return Ok(());
         } else if self.two.is_none() {
-            self.two = Some(format!("{:?}", expression));
+            self.two = Some(Box::new(expression));
             return Ok(());
         }
 
