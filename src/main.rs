@@ -40,7 +40,7 @@ fn main() {
             let code = fs::read_to_string(&path).unwrap();
             let tree = parser.parse(code.as_str(), None).unwrap();
 
-            match process_tree(&language, &tree, code.as_str()) {
+            match process_tree(&language, tree, code.as_str()) {
                 Ok(root) => match output {
                     ArgumentsOutput::Text => println!("{:#?}", &root),
                     ArgumentsOutput::Json => {
@@ -59,7 +59,7 @@ fn main() {
                 if let Ok(code) = line {
                     let tree = parser.parse(code.as_str(), None).unwrap();
 
-                    match process_tree(&language, &tree, code.as_str()) {
+                    match process_tree(&language, tree, code.as_str()) {
                         Ok(root) => match output {
                             ArgumentsOutput::Text => println!("{:#?}", &root),
                             ArgumentsOutput::Json => {

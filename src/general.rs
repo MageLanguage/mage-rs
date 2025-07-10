@@ -1,15 +1,18 @@
 use tree_sitter::{Language, Tree};
 
-use crate::{FlatRoot, flatten_tree};
+use crate::{FlatSource, flatten_tree};
 
 #[derive(Debug)]
 pub enum Error {
     FlattenError(String),
 }
 
-pub fn process_tree(language: &Language, tree: &Tree, code: &str) -> Result<FlatRoot, Error> {
+pub fn process_tree(language: &Language, tree: Tree, code: &str) -> Result<(), Error> {
+    let mut source = FlatSource::new();
     let node_kinds = NodeKinds::new(language);
-    flatten_tree(&node_kinds, tree, code)
+    flatten_tree(&mut source, &node_kinds, tree, code)?;
+    println!("{:#?}", source);
+    Ok(())
 }
 
 pub struct NodeKinds {
