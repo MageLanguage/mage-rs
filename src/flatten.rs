@@ -37,7 +37,7 @@ pub fn flatten_node<Builder: FlatBuilder>(
             flatten_node(&mut additive, node_kinds, child, code)?;
         }
 
-        builder.expression(FlatExpression::Additive(Box::new(additive)))?
+        builder.expression(FlatExpression::Additive(additive))?
     } else if kind_id == node_kinds.add {
         builder.operator(FlatOperator::Add)?
     } else if kind_id == node_kinds.subtract {
@@ -53,7 +53,7 @@ pub fn flatten_node<Builder: FlatBuilder>(
             flatten_node(&mut assign, node_kinds, child, code)?;
         }
 
-        builder.expression(FlatExpression::Assign(Box::new(assign)))?
+        builder.expression(FlatExpression::Assign(assign))?
     } else if kind_id == node_kinds.constant {
         builder.operator(FlatOperator::Constant)?
     } else if kind_id == node_kinds.variable {
@@ -69,8 +69,8 @@ pub fn flatten_node<Builder: FlatBuilder>(
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatExpression {
-    Additive(Box<FlatAdditive>),
-    Assign(Box<FlatAssign>),
+    Additive(FlatAdditive),
+    Assign(FlatAssign),
     Decimal(String),
     String(String),
     Identifier(String),
@@ -136,9 +136,9 @@ impl FlatBuilder for FlatSource {
     }
 
     fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
-        return Err(Error::FlattenError(
+        Err(Error::FlattenError(
             "source builder can't receive operators".to_string(),
-        ));
+        ))
     }
 }
 
@@ -159,7 +159,7 @@ impl FlatBuilder for FlatAdditive {
             return Ok(());
         }
 
-        return Err(Error::FlattenError("both expressions are some".to_string()));
+        Err(Error::FlattenError("both expressions are some".to_string()))
     }
 
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
@@ -168,7 +168,7 @@ impl FlatBuilder for FlatAdditive {
             return Ok(());
         }
 
-        return Err(Error::FlattenError("operator is some".to_string()));
+        Err(Error::FlattenError("operator is some".to_string()))
     }
 }
 
@@ -189,7 +189,7 @@ impl FlatBuilder for FlatAssign {
             return Ok(());
         }
 
-        return Err(Error::FlattenError("both expressions are some".to_string()));
+        Err(Error::FlattenError("both expressions are some".to_string()))
     }
 
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
@@ -198,6 +198,6 @@ impl FlatBuilder for FlatAssign {
             return Ok(());
         }
 
-        return Err(Error::FlattenError("operator is some".to_string()));
+        Err(Error::FlattenError("operator is some".to_string()))
     }
 }
