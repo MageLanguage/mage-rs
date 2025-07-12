@@ -8,10 +8,8 @@ pub enum Error {
 }
 
 pub fn process_tree(language: &Language, tree: Tree, code: &str) -> Result<FlatSource, Error> {
-    let mut source = FlatSource::new();
     let node_kinds = NodeKinds::new(language);
-    flatten_tree(&mut source, &node_kinds, tree, code)?;
-    Ok(source)
+    flatten_tree(&node_kinds, tree, code)
 }
 
 pub struct NodeKinds {
