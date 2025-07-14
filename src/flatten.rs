@@ -13,21 +13,27 @@ pub fn flatten_node(node_kinds: &NodeKinds, node: Node, code: &str) -> Result<Fl
 
     if node_kind == node_kinds.source_file {
         for child in node.named_children(&mut node.walk()) {
-            let child_source = flatten_node(node_kinds, child, code)?;
+            let offset = source.expressions.len();
+            let mut child_source = flatten_node(node_kinds, child, code)?;
+            adjust_indices(&mut child_source.expressions, offset);
             source.expressions.extend(child_source.expressions);
         }
     } else if node_kind == node_kinds.source {
         let mut nested = FlatSource::new();
 
         for child in node.named_children(&mut node.walk()) {
-            let child_source = flatten_node(node_kinds, child, code)?;
+            let offset = nested.expressions.len();
+            let mut child_source = flatten_node(node_kinds, child, code)?;
+            adjust_indices(&mut child_source.expressions, offset);
             nested.expressions.extend(child_source.expressions);
         }
 
         source.expressions.push(FlatExpression::Source(nested));
     } else if node_kind == node_kinds.parenthesize {
         for child in node.named_children(&mut node.walk()) {
-            let child_source = flatten_node(node_kinds, child, code)?;
+            let offset = source.expressions.len();
+            let mut child_source = flatten_node(node_kinds, child, code)?;
+            adjust_indices(&mut child_source.expressions, offset);
             source.expressions.extend(child_source.expressions);
         }
     } else if is_literal_node(node_kinds, node_kind) {
@@ -71,14 +77,18 @@ pub fn flatten_node(node_kinds: &NodeKinds, node: Node, code: &str) -> Result<Fl
         };
 
         let one_expression_index = if let Some(one_child_index) = one_index {
-            let child_source = flatten_node(node_kinds, children[one_child_index], code)?;
+            let offset = source.expressions.len();
+            let mut child_source = flatten_node(node_kinds, children[one_child_index], code)?;
+            adjust_indices(&mut child_source.expressions, offset);
             source.expressions.extend(child_source.expressions);
             Some(source.expressions.len() - 1)
         } else {
             None
         };
 
-        let child_source = flatten_node(node_kinds, children[two_index], code)?;
+        let offset = source.expressions.len();
+        let mut child_source = flatten_node(node_kinds, children[two_index], code)?;
+        adjust_indices(&mut child_source.expressions, offset);
         source.expressions.extend(child_source.expressions);
         let two_expression_index = source.expressions.len() - 1;
 
@@ -115,6 +125,31 @@ pub fn flatten_node(node_kinds: &NodeKinds, node: Node, code: &str) -> Result<Fl
     }
 
     Ok(source)
+}
+
+fn adjust_indices(expressions: &mut [FlatExpression], offset: usize) {
+    for expression in expressions {
+        match expression {
+            FlatExpression::Source(nested_source) => {
+                adjust_indices(&mut nested_source.expressions, 0);
+            }
+            FlatExpression::Member(binary)
+            | FlatExpression::Call(binary)
+            | FlatExpression::Multiplicative(binary)
+            | FlatExpression::Additive(binary)
+            | FlatExpression::Comparison(binary)
+            | FlatExpression::Logical(binary)
+            | FlatExpression::Assign(binary) => {
+                if let Some(ref mut one) = binary.one {
+                    *one += offset;
+                }
+                if let Some(ref mut two) = binary.two {
+                    *two += offset;
+                }
+            }
+            FlatExpression::Literal(_) => {}
+        }
+    }
 }
 
 fn is_operator_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
