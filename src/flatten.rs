@@ -38,11 +38,76 @@ pub fn flatten_node(
             .utf8_text(code.as_bytes())
             .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
 
-        let literal = create_literal_from_node(node_kinds, node_kind, text);
+        let literal = if node_kind == node_kinds.binary
+            || node_kind == node_kinds.octal
+            || node_kind == node_kinds.decimal
+            || node_kind == node_kinds.hex
+        {
+            FlatLiteral::Number(text.to_string())
+        } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted {
+            FlatLiteral::String(text.to_string())
+        } else if node_kind == node_kinds.identifier {
+            FlatLiteral::Identifier(text.to_string())
+        } else {
+            FlatLiteral::Identifier(text.to_string())
+        };
 
         source.expressions.push(FlatExpression::Literal(literal));
     } else if is_binary_operation(node_kinds, node_kind) {
-        flatten_binary_operation(source, node_kinds, node, code)?;
+        let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
+
+        if children.len() < 2 || children.len() > 3 {
+            return Err(Error::FlattenError(format!(
+                "Binary operation should have 2-3 children, got {}",
+                children.len()
+            )));
+        }
+
+        let (one_index, two_index, operator_index) = if children.len() == 2 {
+            (None, 1, 0)
+        } else {
+            if is_operator_node(node_kinds, children[0].kind_id()) {
+                (None, 1, 0)
+            } else {
+                (Some(0), 2, 1)
+            }
+        };
+
+        let one_expression_index = if let Some(one_child_index) = one_index {
+            flatten_node(source, node_kinds, children[one_child_index], code)?;
+            Some(source.expressions.len() - 1)
+        } else {
+            None
+        };
+
+        flatten_node(source, node_kinds, children[two_index], code)?;
+        let two_expression_index = source.expressions.len() - 1;
+
+        let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
+
+        let binary = FlatBinary {
+            one: one_expression_index,
+            two: Some(two_expression_index),
+            operator,
+        };
+
+        let flat_expression = match node_kind {
+            k if k == node_kinds.member => FlatExpression::Member(binary),
+            k if k == node_kinds.call => FlatExpression::Call(binary),
+            k if k == node_kinds.multiplicative => FlatExpression::Multiplicative(binary),
+            k if k == node_kinds.additive => FlatExpression::Additive(binary),
+            k if k == node_kinds.comparison => FlatExpression::Comparison(binary),
+            k if k == node_kinds.logical => FlatExpression::Logical(binary),
+            k if k == node_kinds.assign => FlatExpression::Assign(binary),
+            _ => {
+                return Err(Error::FlattenError(format!(
+                    "Unknown binary operation: {}",
+                    node_kind
+                )));
+            }
+        };
+
+        source.expressions.push(flat_expression);
     } else {
         return Err(Error::FlattenError(format!(
             "Unsupported node kind: {}",
@@ -50,87 +115,6 @@ pub fn flatten_node(
         )));
     }
 
-    Ok(())
-}
-
-fn create_literal_from_node(node_kinds: &NodeKinds, node_kind: u16, text: &str) -> FlatLiteral {
-    if node_kind == node_kinds.binary
-        || node_kind == node_kinds.octal
-        || node_kind == node_kinds.decimal
-        || node_kind == node_kinds.hex
-    {
-        FlatLiteral::Number(text.to_string())
-    } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted {
-        FlatLiteral::String(text.to_string())
-    } else if node_kind == node_kinds.identifier {
-        FlatLiteral::Identifier(text.to_string())
-    } else {
-        FlatLiteral::Identifier(text.to_string())
-    }
-}
-
-fn flatten_binary_operation(
-    source: &mut FlatSource,
-    node_kinds: &NodeKinds,
-    node: Node,
-    code: &str,
-) -> Result<(), Error> {
-    let node_kind = node.kind_id();
-
-    let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
-
-    if children.len() < 2 || children.len() > 3 {
-        return Err(Error::FlattenError(format!(
-            "Binary operation should have 2-3 children, got {}",
-            children.len()
-        )));
-    }
-
-    let (one_index, two_index, operator_index) = if children.len() == 2 {
-        (None, 1, 0)
-    } else {
-        if is_operator_node(node_kinds, children[0].kind_id()) {
-            (None, 1, 0)
-        } else {
-            (Some(0), 2, 1)
-        }
-    };
-
-    let one_expression_index = if let Some(one_child_index) = one_index {
-        flatten_node(source, node_kinds, children[one_child_index], code)?;
-        Some(source.expressions.len() - 1)
-    } else {
-        None
-    };
-
-    flatten_node(source, node_kinds, children[two_index], code)?;
-    let two_expression_index = source.expressions.len() - 1;
-
-    let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
-
-    let binary = FlatBinary {
-        one: one_expression_index,
-        two: Some(two_expression_index),
-        operator,
-    };
-
-    let flat_expression = match node_kind {
-        k if k == node_kinds.member => FlatExpression::Member(binary),
-        k if k == node_kinds.call => FlatExpression::Call(binary),
-        k if k == node_kinds.multiplicative => FlatExpression::Multiplicative(binary),
-        k if k == node_kinds.additive => FlatExpression::Additive(binary),
-        k if k == node_kinds.comparison => FlatExpression::Comparison(binary),
-        k if k == node_kinds.logical => FlatExpression::Logical(binary),
-        k if k == node_kinds.assign => FlatExpression::Assign(binary),
-        _ => {
-            return Err(Error::FlattenError(format!(
-                "Unknown binary operation: {}",
-                node_kind
-            )));
-        }
-    };
-
-    source.expressions.push(flat_expression);
     Ok(())
 }
 
