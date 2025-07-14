@@ -53,26 +53,6 @@ pub fn flatten_node(
     Ok(())
 }
 
-fn is_literal_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
-    node_kind == node_kinds.binary
-        || node_kind == node_kinds.octal
-        || node_kind == node_kinds.decimal
-        || node_kind == node_kinds.hex
-        || node_kind == node_kinds.single_quoted
-        || node_kind == node_kinds.double_quoted
-        || node_kind == node_kinds.identifier
-}
-
-fn is_binary_operation(node_kinds: &NodeKinds, node_kind: u16) -> bool {
-    node_kind == node_kinds.member
-        || node_kind == node_kinds.call
-        || node_kind == node_kinds.multiplicative
-        || node_kind == node_kinds.additive
-        || node_kind == node_kinds.comparison
-        || node_kind == node_kinds.logical
-        || node_kind == node_kinds.assign
-}
-
 fn create_literal_from_node(node_kinds: &NodeKinds, node_kind: u16, text: &str) -> FlatLiteral {
     if node_kind == node_kinds.binary
         || node_kind == node_kinds.octal
@@ -128,20 +108,20 @@ fn flatten_binary_operation(
 
     let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
 
-    let binary_expr = FlatBinary {
+    let binary = FlatBinary {
         one: one_expression_index,
         two: Some(two_expression_index),
         operator,
     };
 
-    let flat_expr = match node_kind {
-        k if k == node_kinds.member => FlatExpression::Member(binary_expr),
-        k if k == node_kinds.call => FlatExpression::Call(binary_expr),
-        k if k == node_kinds.multiplicative => FlatExpression::Multiplicative(binary_expr),
-        k if k == node_kinds.additive => FlatExpression::Additive(binary_expr),
-        k if k == node_kinds.comparison => FlatExpression::Comparison(binary_expr),
-        k if k == node_kinds.logical => FlatExpression::Logical(binary_expr),
-        k if k == node_kinds.assign => FlatExpression::Assign(binary_expr),
+    let flat_expression = match node_kind {
+        k if k == node_kinds.member => FlatExpression::Member(binary),
+        k if k == node_kinds.call => FlatExpression::Call(binary),
+        k if k == node_kinds.multiplicative => FlatExpression::Multiplicative(binary),
+        k if k == node_kinds.additive => FlatExpression::Additive(binary),
+        k if k == node_kinds.comparison => FlatExpression::Comparison(binary),
+        k if k == node_kinds.logical => FlatExpression::Logical(binary),
+        k if k == node_kinds.assign => FlatExpression::Assign(binary),
         _ => {
             return Err(Error::FlattenError(format!(
                 "Unknown binary operation: {}",
@@ -150,7 +130,7 @@ fn flatten_binary_operation(
         }
     };
 
-    source.expressions.push(flat_expr);
+    source.expressions.push(flat_expression);
     Ok(())
 }
 
@@ -172,6 +152,26 @@ fn is_operator_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
         || node_kind == node_kinds.or
         || node_kind == node_kinds.constant
         || node_kind == node_kinds.variable
+}
+
+fn is_literal_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
+    node_kind == node_kinds.binary
+        || node_kind == node_kinds.octal
+        || node_kind == node_kinds.decimal
+        || node_kind == node_kinds.hex
+        || node_kind == node_kinds.single_quoted
+        || node_kind == node_kinds.double_quoted
+        || node_kind == node_kinds.identifier
+}
+
+fn is_binary_operation(node_kinds: &NodeKinds, node_kind: u16) -> bool {
+    node_kind == node_kinds.member
+        || node_kind == node_kinds.call
+        || node_kind == node_kinds.multiplicative
+        || node_kind == node_kinds.additive
+        || node_kind == node_kinds.comparison
+        || node_kind == node_kinds.logical
+        || node_kind == node_kinds.assign
 }
 
 fn node_kind_to_operator(
