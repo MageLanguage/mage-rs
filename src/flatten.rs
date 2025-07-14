@@ -125,6 +125,7 @@ pub fn flatten_node(
                         children[one_child_index],
                         code,
                     )?;
+
                     Some(FlatIndex::Expression(source.expressions.len() - 1))
                 }
             } else {
@@ -143,6 +144,7 @@ pub fn flatten_node(
                 FlatIndex::Source(root.sources.len() - 1)
             } else {
                 flatten_node(root, Some(source), node_kinds, children[two_index], code)?;
+
                 FlatIndex::Expression(source.expressions.len() - 1)
             };
 
