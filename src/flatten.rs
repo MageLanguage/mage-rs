@@ -9,47 +9,38 @@ pub fn flatten_tree(
     tree: Tree,
     code: &str,
 ) -> Result<(), Error> {
-    flatten_node(root, None, node_kinds, tree.root_node(), code)
+    flatten_node(root, None, node_kinds, tree.root_node(), code)?;
+    Ok(())
 }
 
-pub fn flatten_node(
+fn flatten_node(
     root: &mut FlatRoot,
     mut source: Option<&mut FlatSource>,
     node_kinds: &NodeKinds,
     node: Node,
     code: &str,
-) -> Result<(), Error> {
+) -> Result<FlatIndex, Error> {
     let node_kind = node.kind_id();
 
-    if is_source_file_node(node_kinds, node_kind) {
-        match source {
-            Some(source) => {
-                for child in node.named_children(&mut node.walk()) {
-                    flatten_node(root, Some(source), node_kinds, child, code)?;
-                }
-            }
-            None => {
-                let mut source = FlatSource::new();
-
-                for child in node.named_children(&mut node.walk()) {
-                    flatten_node(root, Some(&mut source), node_kinds, child, code)?;
-                }
-
-                root.sources.push(source);
-            }
-        }
-    } else if is_source_node(node_kinds, node_kind) {
-        let mut nested_source = FlatSource::new();
+    if is_source_node(node_kinds, node_kind) {
+        let mut source = FlatSource::new();
 
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
+            flatten_node(root, Some(&mut source), node_kinds, child, code)?;
         }
 
-        root.sources.push(nested_source);
+        let index = FlatIndex::Source(root.sources.len());
+        root.sources.push(source);
+
+        Ok(index)
     } else if is_parenthesize_node(node_kinds, node_kind) {
         if let Some(source) = source {
-            for child in node.named_children(&mut node.walk()) {
-                flatten_node(root, Some(source), node_kinds, child, code)?;
+            if let Some(child) = node.named_children(&mut node.walk()).next() {
+                flatten_node(root, Some(source), node_kinds, child, code)
+            } else {
+                return Err(Error::FlattenError(format!(
+                    "Cannot process parenthesize node without a source context"
+                )));
             }
         } else {
             return Err(Error::FlattenError(format!(
@@ -58,6 +49,10 @@ pub fn flatten_node(
         }
     } else if is_binary_operation(node_kinds, node_kind) {
         if let Some(ref mut source) = source {
+            for child in node.named_children(&mut node.walk()) {
+                _ = child;
+            }
+
             let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
 
             if children.len() < 2 || children.len() > 3 {
@@ -172,7 +167,10 @@ pub fn flatten_node(
                 FlatLiteral::Identifier(text.to_string())
             };
 
+            let index = FlatIndex::Expression(source.expressions.len());
             source.expressions.push(FlatExpression::Literal(literal));
+
+            Ok(index)
         } else {
             return Err(Error::FlattenError(format!(
                 "Cannot process literal node without a source context"
@@ -184,16 +182,10 @@ pub fn flatten_node(
             node_kind
         )));
     }
-
-    Ok(())
-}
-
-fn is_source_file_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
-    node_kind == node_kinds.source_file
 }
 
 fn is_source_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
-    node_kind == node_kinds.source
+    node_kind == node_kinds.source_file || node_kind == node_kinds.source
 }
 
 fn is_parenthesize_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
@@ -315,6 +307,13 @@ impl FlatSource {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatBinary {
+    pub one: Option<FlatIndex>,
+    pub two: Option<FlatIndex>,
+    pub operator: FlatOperator,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatExpression {
     Member(FlatBinary),
     Call(FlatBinary),
@@ -337,13 +336,6 @@ pub enum FlatLiteral {
 pub enum FlatIndex {
     Source(usize),
     Expression(usize),
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatBinary {
-    pub one: Option<FlatIndex>,
-    pub two: Option<FlatIndex>,
-    pub operator: FlatOperator,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
