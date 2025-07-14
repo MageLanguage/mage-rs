@@ -4,34 +4,31 @@ use tree_sitter::{Node, Tree};
 use crate::{Error, NodeKinds};
 
 pub fn flatten_tree(node_kinds: &NodeKinds, tree: Tree, code: &str) -> Result<FlatSource, Error> {
-    let mut flat_source = FlatSource::new();
-    flatten_node(&mut flat_source, node_kinds, tree.root_node(), code)?;
-    Ok(flat_source)
+    flatten_node(node_kinds, tree.root_node(), code)
 }
 
-pub fn flatten_node(
-    source: &mut FlatSource,
-    node_kinds: &NodeKinds,
-    node: Node,
-    code: &str,
-) -> Result<(), Error> {
+pub fn flatten_node(node_kinds: &NodeKinds, node: Node, code: &str) -> Result<FlatSource, Error> {
+    let mut source = FlatSource::new();
     let node_kind = node.kind_id();
 
     if node_kind == node_kinds.source_file {
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(source, node_kinds, child, code)?;
+            let child_source = flatten_node(node_kinds, child, code)?;
+            source.expressions.extend(child_source.expressions);
         }
     } else if node_kind == node_kinds.source {
         let mut nested = FlatSource::new();
 
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut nested, node_kinds, child, code)?;
+            let child_source = flatten_node(node_kinds, child, code)?;
+            nested.expressions.extend(child_source.expressions);
         }
 
         source.expressions.push(FlatExpression::Source(nested));
     } else if node_kind == node_kinds.parenthesize {
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(source, node_kinds, child, code)?;
+            let child_source = flatten_node(node_kinds, child, code)?;
+            source.expressions.extend(child_source.expressions);
         }
     } else if is_literal_node(node_kinds, node_kind) {
         let text = node
@@ -74,13 +71,15 @@ pub fn flatten_node(
         };
 
         let one_expression_index = if let Some(one_child_index) = one_index {
-            flatten_node(source, node_kinds, children[one_child_index], code)?;
+            let child_source = flatten_node(node_kinds, children[one_child_index], code)?;
+            source.expressions.extend(child_source.expressions);
             Some(source.expressions.len() - 1)
         } else {
             None
         };
 
-        flatten_node(source, node_kinds, children[two_index], code)?;
+        let child_source = flatten_node(node_kinds, children[two_index], code)?;
+        source.expressions.extend(child_source.expressions);
         let two_expression_index = source.expressions.len() - 1;
 
         let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
@@ -115,7 +114,7 @@ pub fn flatten_node(
         )));
     }
 
-    Ok(())
+    Ok(source)
 }
 
 fn is_operator_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
