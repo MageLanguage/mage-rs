@@ -49,10 +49,6 @@ fn flatten_node(
         }
     } else if is_binary_operation(node_kinds, node_kind) {
         if let Some(ref mut source) = source {
-            for child in node.named_children(&mut node.walk()) {
-                _ = child;
-            }
-
             let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
 
             if children.len() < 2 || children.len() > 3 {
@@ -73,48 +69,19 @@ fn flatten_node(
             };
 
             let one_expression_index = if let Some(one_child_index) = one_index {
-                if children[one_child_index].kind_id() == node_kinds.source {
-                    let mut nested_source = FlatSource::new();
-
-                    for child in children[one_child_index]
-                        .named_children(&mut children[one_child_index].walk())
-                    {
-                        flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
-                    }
-
-                    root.sources.push(nested_source);
-
-                    Some(FlatIndex::Source(root.sources.len() - 1))
-                } else {
-                    flatten_node(
-                        root,
-                        Some(source),
-                        node_kinds,
-                        children[one_child_index],
-                        code,
-                    )?;
-
-                    Some(FlatIndex::Expression(source.expressions.len() - 1))
-                }
+                Some(flatten_node(
+                    root,
+                    Some(source),
+                    node_kinds,
+                    children[one_child_index],
+                    code,
+                )?)
             } else {
                 None
             };
 
-            let two_expression_index = if children[two_index].kind_id() == node_kinds.source {
-                let mut nested_source = FlatSource::new();
-
-                for child in children[two_index].named_children(&mut children[two_index].walk()) {
-                    flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
-                }
-
-                root.sources.push(nested_source);
-
-                FlatIndex::Source(root.sources.len() - 1)
-            } else {
+            let two_expression_index =
                 flatten_node(root, Some(source), node_kinds, children[two_index], code)?;
-
-                FlatIndex::Expression(source.expressions.len() - 1)
-            };
 
             let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
 
@@ -140,7 +107,10 @@ fn flatten_node(
                 }
             };
 
+            let index = FlatIndex::Expression(source.expressions.len());
             source.expressions.push(flat_expression);
+
+            Ok(index)
         } else {
             return Err(Error::FlattenError(format!(
                 "Cannot process binary operation without a source context"
