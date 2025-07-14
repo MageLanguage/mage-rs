@@ -96,10 +96,8 @@ fn flatten_binary_operation(
     code: &str,
 ) -> Result<(), Error> {
     let node_kind = node.kind_id();
-    let children: Vec<Node> = node
-        .children(&mut node.walk())
-        .filter(|n| n.is_named())
-        .collect();
+
+    let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
 
     if children.len() < 2 || children.len() > 3 {
         return Err(Error::FlattenError(format!(
@@ -108,31 +106,31 @@ fn flatten_binary_operation(
         )));
     }
 
-    let (one_index, operator_idx, two_idx) = if children.len() == 2 {
-        (None, 0, 1)
+    let (one_index, two_index, operator_index) = if children.len() == 2 {
+        (None, 1, 0)
     } else {
         if is_operator_node(node_kinds, children[0].kind_id()) {
-            (None, 0, 1)
+            (None, 1, 0)
         } else {
-            (Some(0), 1, 2)
+            (Some(0), 2, 1)
         }
     };
 
-    let one_expr_index = if let Some(one_child_idx) = one_index {
-        flatten_node(source, node_kinds, children[one_child_idx], code)?;
+    let one_expression_index = if let Some(one_child_index) = one_index {
+        flatten_node(source, node_kinds, children[one_child_index], code)?;
         Some(source.expressions.len() - 1)
     } else {
         None
     };
 
-    flatten_node(source, node_kinds, children[two_idx], code)?;
-    let two_expr_index = source.expressions.len() - 1;
+    flatten_node(source, node_kinds, children[two_index], code)?;
+    let two_expression_index = source.expressions.len() - 1;
 
-    let operator = node_kind_to_operator(node_kinds, children[operator_idx].kind_id())?;
+    let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
 
     let binary_expr = FlatBinary {
-        one: one_expr_index,
-        two: Some(two_expr_index),
+        one: one_expression_index,
+        two: Some(two_expression_index),
         operator,
     };
 
