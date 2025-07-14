@@ -22,9 +22,13 @@ pub fn flatten_node(
             flatten_node(source, node_kinds, child, code)?;
         }
     } else if node_kind == node_kinds.source {
+        let mut nested = FlatSource::new();
+
         for child in node.named_children(&mut node.walk()) {
-            flatten_node(source, node_kinds, child, code)?;
+            flatten_node(&mut nested, node_kinds, child, code)?;
         }
+
+        source.expressions.push(FlatExpression::Source(nested));
     } else if node_kind == node_kinds.parenthesize {
         for child in node.named_children(&mut node.walk()) {
             flatten_node(source, node_kinds, child, code)?;
@@ -33,7 +37,9 @@ pub fn flatten_node(
         let text = node
             .utf8_text(code.as_bytes())
             .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
+
         let literal = create_literal_from_node(node_kinds, node_kind, text);
+
         source.expressions.push(FlatExpression::Literal(literal));
     } else if is_binary_operation(node_kinds, node_kind) {
         flatten_binary_operation(source, node_kinds, node, code)?;
@@ -214,6 +220,7 @@ fn node_kind_to_operator(
             operator_kind
         )));
     };
+
     Ok(operator)
 }
 
@@ -232,7 +239,7 @@ impl FlatSource {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatExpression {
-    Literal(FlatLiteral),
+    Source(FlatSource),
     Member(FlatBinary),
     Call(FlatBinary),
     Multiplicative(FlatBinary),
@@ -240,6 +247,7 @@ pub enum FlatExpression {
     Comparison(FlatBinary),
     Logical(FlatBinary),
     Assign(FlatBinary),
+    Literal(FlatLiteral),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
