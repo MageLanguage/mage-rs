@@ -21,7 +21,7 @@ pub fn flatten_node(
 ) -> Result<(), Error> {
     let node_kind = node.kind_id();
 
-    if node_kind == node_kinds.source_file {
+    if is_source_file_node(node_kinds, node_kind) {
         match source {
             Some(source) => {
                 for child in node.named_children(&mut node.walk()) {
@@ -38,7 +38,7 @@ pub fn flatten_node(
                 root.sources.push(source);
             }
         }
-    } else if node_kind == node_kinds.source {
+    } else if is_source_node(node_kinds, node_kind) {
         let mut nested_source = FlatSource::new();
 
         for child in node.named_children(&mut node.walk()) {
@@ -46,9 +46,15 @@ pub fn flatten_node(
         }
 
         root.sources.push(nested_source);
-    } else if node_kind == node_kinds.parenthesize {
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(root, source.as_deref_mut(), node_kinds, child, code)?;
+    } else if is_parenthesize_node(node_kinds, node_kind) {
+        if let Some(source) = source {
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(root, Some(source), node_kinds, child, code)?;
+            }
+        } else {
+            return Err(Error::FlattenError(format!(
+                "Cannot process parenthesize node without a source context"
+            )));
         }
     } else if is_literal_node(node_kinds, node_kind) {
         if let Some(source) = source {
@@ -100,14 +106,16 @@ pub fn flatten_node(
 
             let one_expression_index = if let Some(one_child_index) = one_index {
                 if children[one_child_index].kind_id() == node_kinds.source {
-                    // Handle source block for left operand
                     let mut nested_source = FlatSource::new();
+
                     for child in children[one_child_index]
                         .named_children(&mut children[one_child_index].walk())
                     {
                         flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
                     }
+
                     root.sources.push(nested_source);
+
                     Some(FlatIndex::Source(root.sources.len() - 1))
                 } else {
                     flatten_node(
@@ -124,12 +132,14 @@ pub fn flatten_node(
             };
 
             let two_expression_index = if children[two_index].kind_id() == node_kinds.source {
-                // Handle source block for right operand
                 let mut nested_source = FlatSource::new();
+
                 for child in children[two_index].named_children(&mut children[two_index].walk()) {
                     flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
                 }
+
                 root.sources.push(nested_source);
+
                 FlatIndex::Source(root.sources.len() - 1)
             } else {
                 flatten_node(root, Some(source), node_kinds, children[two_index], code)?;
@@ -174,6 +184,18 @@ pub fn flatten_node(
     }
 
     Ok(())
+}
+
+fn is_source_file_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
+    node_kind == node_kinds.source_file
+}
+
+fn is_source_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
+    node_kind == node_kinds.source
+}
+
+fn is_parenthesize_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
+    node_kind == node_kinds.parenthesize
 }
 
 fn is_operator_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
