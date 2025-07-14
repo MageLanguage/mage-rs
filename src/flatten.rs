@@ -56,33 +56,6 @@ pub fn flatten_node(
                 "Cannot process parenthesize node without a source context"
             )));
         }
-    } else if is_literal_node(node_kinds, node_kind) {
-        if let Some(source) = source {
-            let text = node
-                .utf8_text(code.as_bytes())
-                .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
-
-            let literal = if node_kind == node_kinds.binary
-                || node_kind == node_kinds.octal
-                || node_kind == node_kinds.decimal
-                || node_kind == node_kinds.hex
-            {
-                FlatLiteral::Number(text.to_string())
-            } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted
-            {
-                FlatLiteral::String(text.to_string())
-            } else if node_kind == node_kinds.identifier {
-                FlatLiteral::Identifier(text.to_string())
-            } else {
-                FlatLiteral::Identifier(text.to_string())
-            };
-
-            source.expressions.push(FlatExpression::Literal(literal));
-        } else {
-            return Err(Error::FlattenError(format!(
-                "Cannot process literal node without a source context"
-            )));
-        }
     } else if is_binary_operation(node_kinds, node_kind) {
         if let Some(ref mut source) = source {
             let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
@@ -176,6 +149,33 @@ pub fn flatten_node(
         } else {
             return Err(Error::FlattenError(format!(
                 "Cannot process binary operation without a source context"
+            )));
+        }
+    } else if is_literal_node(node_kinds, node_kind) {
+        if let Some(source) = source {
+            let text = node
+                .utf8_text(code.as_bytes())
+                .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
+
+            let literal = if node_kind == node_kinds.binary
+                || node_kind == node_kinds.octal
+                || node_kind == node_kinds.decimal
+                || node_kind == node_kinds.hex
+            {
+                FlatLiteral::Number(text.to_string())
+            } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted
+            {
+                FlatLiteral::String(text.to_string())
+            } else if node_kind == node_kinds.identifier {
+                FlatLiteral::Identifier(text.to_string())
+            } else {
+                FlatLiteral::Identifier(text.to_string())
+            };
+
+            source.expressions.push(FlatExpression::Literal(literal));
+        } else {
+            return Err(Error::FlattenError(format!(
+                "Cannot process literal node without a source context"
             )));
         }
     } else {
