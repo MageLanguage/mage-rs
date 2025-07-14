@@ -3,153 +3,177 @@ use tree_sitter::{Node, Tree};
 
 use crate::{Error, NodeKinds};
 
-pub fn flatten_tree(node_kinds: &NodeKinds, tree: Tree, code: &str) -> Result<FlatSource, Error> {
-    flatten_node(node_kinds, tree.root_node(), code)
+pub fn flatten_tree(
+    root: &mut FlatRoot,
+    node_kinds: &NodeKinds,
+    tree: Tree,
+    code: &str,
+) -> Result<(), Error> {
+    flatten_node(root, None, node_kinds, tree.root_node(), code)
 }
 
-pub fn flatten_node(node_kinds: &NodeKinds, node: Node, code: &str) -> Result<FlatSource, Error> {
-    let mut source = FlatSource::new();
+pub fn flatten_node(
+    root: &mut FlatRoot,
+    mut source: Option<&mut FlatSource>,
+    node_kinds: &NodeKinds,
+    node: Node,
+    code: &str,
+) -> Result<(), Error> {
     let node_kind = node.kind_id();
 
     if node_kind == node_kinds.source_file {
-        for child in node.named_children(&mut node.walk()) {
-            let offset = source.expressions.len();
-            let mut child_source = flatten_node(node_kinds, child, code)?;
-            adjust_indices(&mut child_source.expressions, offset);
-            source.expressions.extend(child_source.expressions);
+        match source {
+            Some(source) => {
+                for child in node.named_children(&mut node.walk()) {
+                    flatten_node(root, Some(source), node_kinds, child, code)?;
+                }
+            }
+            None => {
+                let mut source = FlatSource::new();
+
+                for child in node.named_children(&mut node.walk()) {
+                    flatten_node(root, Some(&mut source), node_kinds, child, code)?;
+                }
+
+                root.sources.push(source);
+            }
         }
     } else if node_kind == node_kinds.source {
-        let mut nested = FlatSource::new();
+        let mut nested_source = FlatSource::new();
 
         for child in node.named_children(&mut node.walk()) {
-            let offset = nested.expressions.len();
-            let mut child_source = flatten_node(node_kinds, child, code)?;
-            adjust_indices(&mut child_source.expressions, offset);
-            nested.expressions.extend(child_source.expressions);
+            flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
         }
 
-        source.expressions.push(FlatExpression::Source(nested));
+        root.sources.push(nested_source);
     } else if node_kind == node_kinds.parenthesize {
         for child in node.named_children(&mut node.walk()) {
-            let offset = source.expressions.len();
-            let mut child_source = flatten_node(node_kinds, child, code)?;
-            adjust_indices(&mut child_source.expressions, offset);
-            source.expressions.extend(child_source.expressions);
+            flatten_node(root, source.as_deref_mut(), node_kinds, child, code)?;
         }
     } else if is_literal_node(node_kinds, node_kind) {
-        let text = node
-            .utf8_text(code.as_bytes())
-            .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
+        if let Some(source) = source {
+            let text = node
+                .utf8_text(code.as_bytes())
+                .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
 
-        let literal = if node_kind == node_kinds.binary
-            || node_kind == node_kinds.octal
-            || node_kind == node_kinds.decimal
-            || node_kind == node_kinds.hex
-        {
-            FlatLiteral::Number(text.to_string())
-        } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted {
-            FlatLiteral::String(text.to_string())
-        } else if node_kind == node_kinds.identifier {
-            FlatLiteral::Identifier(text.to_string())
+            let literal = if node_kind == node_kinds.binary
+                || node_kind == node_kinds.octal
+                || node_kind == node_kinds.decimal
+                || node_kind == node_kinds.hex
+            {
+                FlatLiteral::Number(text.to_string())
+            } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted
+            {
+                FlatLiteral::String(text.to_string())
+            } else if node_kind == node_kinds.identifier {
+                FlatLiteral::Identifier(text.to_string())
+            } else {
+                FlatLiteral::Identifier(text.to_string())
+            };
+
+            source.expressions.push(FlatExpression::Literal(literal));
         } else {
-            FlatLiteral::Identifier(text.to_string())
-        };
-
-        source.expressions.push(FlatExpression::Literal(literal));
-    } else if is_binary_operation(node_kinds, node_kind) {
-        let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
-
-        if children.len() < 2 || children.len() > 3 {
             return Err(Error::FlattenError(format!(
-                "Binary operation should have 2-3 children, got {}",
-                children.len()
+                "Cannot process literal node without a source context"
             )));
         }
+    } else if is_binary_operation(node_kinds, node_kind) {
+        if let Some(ref mut source) = source {
+            let children: Vec<Node> = node.named_children(&mut node.walk()).collect();
 
-        let (one_index, two_index, operator_index) = if children.len() == 2 {
-            (None, 1, 0)
-        } else {
-            if is_operator_node(node_kinds, children[0].kind_id()) {
-                (None, 1, 0)
-            } else {
-                (Some(0), 2, 1)
-            }
-        };
-
-        let one_expression_index = if let Some(one_child_index) = one_index {
-            let offset = source.expressions.len();
-            let mut child_source = flatten_node(node_kinds, children[one_child_index], code)?;
-            adjust_indices(&mut child_source.expressions, offset);
-            source.expressions.extend(child_source.expressions);
-            Some(source.expressions.len() - 1)
-        } else {
-            None
-        };
-
-        let offset = source.expressions.len();
-        let mut child_source = flatten_node(node_kinds, children[two_index], code)?;
-        adjust_indices(&mut child_source.expressions, offset);
-        source.expressions.extend(child_source.expressions);
-        let two_expression_index = source.expressions.len() - 1;
-
-        let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
-
-        let binary = FlatBinary {
-            one: one_expression_index,
-            two: Some(two_expression_index),
-            operator,
-        };
-
-        let flat_expression = match node_kind {
-            k if k == node_kinds.member => FlatExpression::Member(binary),
-            k if k == node_kinds.call => FlatExpression::Call(binary),
-            k if k == node_kinds.multiplicative => FlatExpression::Multiplicative(binary),
-            k if k == node_kinds.additive => FlatExpression::Additive(binary),
-            k if k == node_kinds.comparison => FlatExpression::Comparison(binary),
-            k if k == node_kinds.logical => FlatExpression::Logical(binary),
-            k if k == node_kinds.assign => FlatExpression::Assign(binary),
-            _ => {
+            if children.len() < 2 || children.len() > 3 {
                 return Err(Error::FlattenError(format!(
-                    "Unknown binary operation: {}",
-                    node_kind
+                    "Binary operation should have 2-3 children, got {}",
+                    children.len()
                 )));
             }
-        };
 
-        source.expressions.push(flat_expression);
+            let (one_index, two_index, operator_index) = if children.len() == 2 {
+                (None, 1, 0)
+            } else {
+                if is_operator_node(node_kinds, children[0].kind_id()) {
+                    (None, 1, 0)
+                } else {
+                    (Some(0), 2, 1)
+                }
+            };
+
+            let one_expression_index = if let Some(one_child_index) = one_index {
+                if children[one_child_index].kind_id() == node_kinds.source {
+                    // Handle source block for left operand
+                    let mut nested_source = FlatSource::new();
+                    for child in children[one_child_index]
+                        .named_children(&mut children[one_child_index].walk())
+                    {
+                        flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
+                    }
+                    root.sources.push(nested_source);
+                    Some(FlatIndex::Source(root.sources.len() - 1))
+                } else {
+                    flatten_node(
+                        root,
+                        Some(source),
+                        node_kinds,
+                        children[one_child_index],
+                        code,
+                    )?;
+                    Some(FlatIndex::Expression(source.expressions.len() - 1))
+                }
+            } else {
+                None
+            };
+
+            let two_expression_index = if children[two_index].kind_id() == node_kinds.source {
+                // Handle source block for right operand
+                let mut nested_source = FlatSource::new();
+                for child in children[two_index].named_children(&mut children[two_index].walk()) {
+                    flatten_node(root, Some(&mut nested_source), node_kinds, child, code)?;
+                }
+                root.sources.push(nested_source);
+                FlatIndex::Source(root.sources.len() - 1)
+            } else {
+                flatten_node(root, Some(source), node_kinds, children[two_index], code)?;
+                FlatIndex::Expression(source.expressions.len() - 1)
+            };
+
+            let operator = node_kind_to_operator(node_kinds, children[operator_index].kind_id())?;
+
+            let binary = FlatBinary {
+                one: one_expression_index,
+                two: Some(two_expression_index),
+                operator,
+            };
+
+            let flat_expression = match node_kind {
+                k if k == node_kinds.member => FlatExpression::Member(binary),
+                k if k == node_kinds.call => FlatExpression::Call(binary),
+                k if k == node_kinds.multiplicative => FlatExpression::Multiplicative(binary),
+                k if k == node_kinds.additive => FlatExpression::Additive(binary),
+                k if k == node_kinds.comparison => FlatExpression::Comparison(binary),
+                k if k == node_kinds.logical => FlatExpression::Logical(binary),
+                k if k == node_kinds.assign => FlatExpression::Assign(binary),
+                _ => {
+                    return Err(Error::FlattenError(format!(
+                        "Unknown binary operation: {}",
+                        node_kind
+                    )));
+                }
+            };
+
+            source.expressions.push(flat_expression);
+        } else {
+            return Err(Error::FlattenError(format!(
+                "Cannot process binary operation without a source context"
+            )));
+        }
     } else {
         return Err(Error::FlattenError(format!(
-            "Unsupported node kind: {}",
+            "Unsupported node kind: {}. Expected source_file, source, parenthesize, literal, or binary operation",
             node_kind
         )));
     }
 
-    Ok(source)
-}
-
-fn adjust_indices(expressions: &mut [FlatExpression], offset: usize) {
-    for expression in expressions {
-        match expression {
-            FlatExpression::Source(nested_source) => {
-                adjust_indices(&mut nested_source.expressions, 0);
-            }
-            FlatExpression::Member(binary)
-            | FlatExpression::Call(binary)
-            | FlatExpression::Multiplicative(binary)
-            | FlatExpression::Additive(binary)
-            | FlatExpression::Comparison(binary)
-            | FlatExpression::Logical(binary)
-            | FlatExpression::Assign(binary) => {
-                if let Some(ref mut one) = binary.one {
-                    *one += offset;
-                }
-                if let Some(ref mut two) = binary.two {
-                    *two += offset;
-                }
-            }
-            FlatExpression::Literal(_) => {}
-        }
-    }
+    Ok(())
 }
 
 fn is_operator_node(node_kinds: &NodeKinds, node_kind: u16) -> bool {
@@ -241,6 +265,19 @@ fn node_kind_to_operator(
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatRoot {
+    pub sources: Vec<FlatSource>,
+}
+
+impl FlatRoot {
+    pub fn new() -> Self {
+        Self {
+            sources: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatSource {
     pub expressions: Vec<FlatExpression>,
 }
@@ -255,7 +292,6 @@ impl FlatSource {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatExpression {
-    Source(FlatSource),
     Member(FlatBinary),
     Call(FlatBinary),
     Multiplicative(FlatBinary),
@@ -271,13 +307,18 @@ pub enum FlatLiteral {
     Number(String),
     String(String),
     Identifier(String),
-    Index(usize),
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum FlatIndex {
+    Source(usize),
+    Expression(usize),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatBinary {
-    pub one: Option<usize>,
-    pub two: Option<usize>,
+    pub one: Option<FlatIndex>,
+    pub two: Option<FlatIndex>,
     pub operator: FlatOperator,
 }
 
