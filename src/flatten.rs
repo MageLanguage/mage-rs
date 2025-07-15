@@ -13,6 +13,25 @@ pub fn flatten_tree(
     Ok(())
 }
 
+fn flatten_source(
+    root: &mut FlatRoot,
+    node_kinds: &NodeKinds,
+    node: Node,
+    code: &str,
+) -> Result<FlatExpression, Error> {
+    Err(Error::FlattenError("source".to_string()))
+}
+
+fn flatten_expression(
+    root: &mut FlatRoot,
+    source: &mut FlatSource,
+    node_kinds: &NodeKinds,
+    node: Node,
+    code: &str,
+) -> Result<FlatExpression, Error> {
+    Err(Error::FlattenError("expression".to_string()))
+}
+
 fn flatten_node(
     root: &mut FlatRoot,
     mut source: Option<&mut FlatSource>,
@@ -127,18 +146,18 @@ fn flatten_node(
                 || node_kind == node_kinds.decimal
                 || node_kind == node_kinds.hex
             {
-                FlatLiteral::Number(text.to_string())
+                FlatExpression::Number(text.to_string())
             } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted
             {
-                FlatLiteral::String(text.to_string())
+                FlatExpression::String(text.to_string())
             } else if node_kind == node_kinds.identifier {
-                FlatLiteral::Identifier(text.to_string())
+                FlatExpression::Identifier(text.to_string())
             } else {
-                FlatLiteral::Identifier(text.to_string())
+                FlatExpression::Identifier(text.to_string())
             };
 
             let index = FlatIndex::Expression(source.expressions.len());
-            source.expressions.push(FlatExpression::Literal(literal));
+            source.expressions.push(literal);
 
             Ok(index)
         } else {
@@ -292,11 +311,6 @@ pub enum FlatExpression {
     Comparison(FlatBinary),
     Logical(FlatBinary),
     Assign(FlatBinary),
-    Literal(FlatLiteral),
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum FlatLiteral {
     Number(String),
     String(String),
     Identifier(String),
