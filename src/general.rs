@@ -1,16 +1,16 @@
+use serde::{Deserialize, Serialize};
 use tree_sitter::{Language, Tree};
 
 use crate::{FlatRoot, flatten_tree};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Error {
     FlattenError(String),
 }
 
 pub fn process_tree(language: &Language, tree: Tree, code: &str) -> Result<FlatRoot, Error> {
     let node_kinds = NodeKinds::new(language);
-    let mut root = FlatRoot::new();
-    flatten_tree(&mut root, &node_kinds, tree, code)?;
+    let root = flatten_tree(&node_kinds, tree, code)?;
     Ok(root)
 }
 
