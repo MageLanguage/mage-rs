@@ -22,134 +22,170 @@ fn flatten_node(
         .utf8_text(code.as_bytes())
         .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
 
-    if node_kind == node_kinds.source_file || node_kind == node_kinds.source {
-        let mut source_builder = FlatSourceBuilder::new(builder);
+    match node_kind {
+        kind if kind == node_kinds.source_file || kind == node_kinds.source => {
+            let mut source_builder = FlatSourceBuilder::new(builder);
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut source_builder, node_kinds, child, code)?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut source_builder, node_kinds, child, code)?;
+            }
+
+            let source = source_builder.source()?;
+
+            builder.source(source)?;
         }
+        kind if kind == node_kinds.member => {
+            let mut binary_builder = FlatBinaryBuilder::new(builder);
 
-        let source = source_builder.source()?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            }
 
-        builder.source(source)?;
-    } else if node_kind == node_kinds.member {
-        let mut binary_builder = FlatBinaryBuilder::new(builder);
+            let binary = binary_builder.binary()?;
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            builder.expression(FlatExpression::Member(binary), true)?;
         }
+        kind if kind == node_kinds.multiplicative => {
+            let mut binary_builder = FlatBinaryBuilder::new(builder);
 
-        let binary = binary_builder.binary()?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            }
 
-        builder.expression(FlatExpression::Member(binary), true)?;
-    } else if node_kind == node_kinds.multiplicative {
-        let mut binary_builder = FlatBinaryBuilder::new(builder);
+            let binary = binary_builder.binary()?;
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            builder.expression(FlatExpression::Multiplicative(binary), true)?;
         }
+        kind if kind == node_kinds.additive => {
+            let mut binary_builder = FlatBinaryBuilder::new(builder);
 
-        let binary = binary_builder.binary()?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            }
 
-        builder.expression(FlatExpression::Multiplicative(binary), true)?;
-    } else if node_kind == node_kinds.additive {
-        let mut binary_builder = FlatBinaryBuilder::new(builder);
+            let binary = binary_builder.binary()?;
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            builder.expression(FlatExpression::Additive(binary), true)?;
         }
+        kind if kind == node_kinds.comparison => {
+            let mut binary_builder = FlatBinaryBuilder::new(builder);
 
-        let binary = binary_builder.binary()?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            }
 
-        builder.expression(FlatExpression::Additive(binary), true)?;
-    } else if node_kind == node_kinds.comparison {
-        let mut binary_builder = FlatBinaryBuilder::new(builder);
+            let binary = binary_builder.binary()?;
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            builder.expression(FlatExpression::Comparison(binary), true)?;
         }
+        kind if kind == node_kinds.logical => {
+            let mut binary_builder = FlatBinaryBuilder::new(builder);
 
-        let binary = binary_builder.binary()?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            }
 
-        builder.expression(FlatExpression::Comparison(binary), true)?;
-    } else if node_kind == node_kinds.logical {
-        let mut binary_builder = FlatBinaryBuilder::new(builder);
+            let binary = binary_builder.binary()?;
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            builder.expression(FlatExpression::Logical(binary), true)?;
         }
+        kind if kind == node_kinds.call => {
+            let mut binary_builder = FlatBinaryBuilder::new(builder);
 
-        let binary = binary_builder.binary()?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            }
 
-        builder.expression(FlatExpression::Logical(binary), true)?;
-    } else if node_kind == node_kinds.call {
-        let mut binary_builder = FlatBinaryBuilder::new(builder);
+            let binary = binary_builder.binary()?;
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            builder.expression(FlatExpression::Call(binary), true)?;
         }
+        kind if kind == node_kinds.assign => {
+            let mut binary_builder = FlatBinaryBuilder::new(builder);
 
-        let binary = binary_builder.binary()?;
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            }
 
-        builder.expression(FlatExpression::Call(binary), true)?;
-    } else if node_kind == node_kinds.assign {
-        let mut binary_builder = FlatBinaryBuilder::new(builder);
+            let binary = binary_builder.binary()?;
 
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+            builder.expression(FlatExpression::Assign(binary), true)?;
         }
-
-        let binary = binary_builder.binary()?;
-
-        builder.expression(FlatExpression::Assign(binary), true)?;
-    } else if node_kind == node_kinds.parenthesize {
-        for child in node.named_children(&mut node.walk()) {
-            flatten_node(builder, node_kinds, child, code)?;
+        kind if kind == node_kinds.parenthesize => {
+            for child in node.named_children(&mut node.walk()) {
+                flatten_node(builder, node_kinds, child, code)?;
+            }
         }
-    } else if node_kind == node_kinds.binary
-        || node_kind == node_kinds.octal
-        || node_kind == node_kinds.decimal
-        || node_kind == node_kinds.hex
-    {
-        builder.expression(FlatExpression::Number(node_text.to_string()), true)?;
-    } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted {
-        builder.expression(FlatExpression::String(node_text.to_string()), true)?;
-    } else if node_kind == node_kinds.identifier {
-        builder.expression(FlatExpression::Identifier(node_text.to_string()), true)?;
-    } else if node_kind == node_kinds.extract {
-        builder.operator(FlatOperator::Extract)?;
-    } else if node_kind == node_kinds.pipe {
-        builder.operator(FlatOperator::Pipe)?;
-    } else if node_kind == node_kinds.multiply {
-        builder.operator(FlatOperator::Multiply)?;
-    } else if node_kind == node_kinds.divide {
-        builder.operator(FlatOperator::Divide)?;
-    } else if node_kind == node_kinds.modulo {
-        builder.operator(FlatOperator::Modulo)?;
-    } else if node_kind == node_kinds.add {
-        builder.operator(FlatOperator::Add)?;
-    } else if node_kind == node_kinds.subtract {
-        builder.operator(FlatOperator::Subtract)?;
-    } else if node_kind == node_kinds.equal {
-        builder.operator(FlatOperator::Equal)?;
-    } else if node_kind == node_kinds.not_equal {
-        builder.operator(FlatOperator::NotEqual)?;
-    } else if node_kind == node_kinds.less_than {
-        builder.operator(FlatOperator::LessThan)?;
-    } else if node_kind == node_kinds.greater_than {
-        builder.operator(FlatOperator::GreaterThan)?;
-    } else if node_kind == node_kinds.less_equal {
-        builder.operator(FlatOperator::LessEqual)?;
-    } else if node_kind == node_kinds.greater_equal {
-        builder.operator(FlatOperator::GreaterEqual)?;
-    } else if node_kind == node_kinds.and {
-        builder.operator(FlatOperator::And)?;
-    } else if node_kind == node_kinds.or {
-        builder.operator(FlatOperator::Or)?;
-    } else if node_kind == node_kinds.constant {
-        builder.operator(FlatOperator::Constant)?;
-    } else if node_kind == node_kinds.variable {
-        builder.operator(FlatOperator::Variable)?;
+        kind if kind == node_kinds.binary
+            || kind == node_kinds.octal
+            || kind == node_kinds.decimal
+            || kind == node_kinds.hex =>
+        {
+            builder.expression(FlatExpression::Number(node_text.to_string()), true)?;
+        }
+        kind if kind == node_kinds.single_quoted || kind == node_kinds.double_quoted => {
+            builder.expression(FlatExpression::String(node_text.to_string()), true)?;
+        }
+        kind if kind == node_kinds.identifier => {
+            builder.expression(FlatExpression::Identifier(node_text.to_string()), true)?;
+        }
+        kind if kind == node_kinds.extract => {
+            builder.operator(FlatOperator::Extract)?;
+        }
+        kind if kind == node_kinds.pipe => {
+            builder.operator(FlatOperator::Pipe)?;
+        }
+        kind if kind == node_kinds.multiply => {
+            builder.operator(FlatOperator::Multiply)?;
+        }
+        kind if kind == node_kinds.divide => {
+            builder.operator(FlatOperator::Divide)?;
+        }
+        kind if kind == node_kinds.modulo => {
+            builder.operator(FlatOperator::Modulo)?;
+        }
+        kind if kind == node_kinds.add => {
+            builder.operator(FlatOperator::Add)?;
+        }
+        kind if kind == node_kinds.subtract => {
+            builder.operator(FlatOperator::Subtract)?;
+        }
+        kind if kind == node_kinds.equal => {
+            builder.operator(FlatOperator::Equal)?;
+        }
+        kind if kind == node_kinds.not_equal => {
+            builder.operator(FlatOperator::NotEqual)?;
+        }
+        kind if kind == node_kinds.less_than => {
+            builder.operator(FlatOperator::LessThan)?;
+        }
+        kind if kind == node_kinds.greater_than => {
+            builder.operator(FlatOperator::GreaterThan)?;
+        }
+        kind if kind == node_kinds.less_equal => {
+            builder.operator(FlatOperator::LessEqual)?;
+        }
+        kind if kind == node_kinds.greater_equal => {
+            builder.operator(FlatOperator::GreaterEqual)?;
+        }
+        kind if kind == node_kinds.and => {
+            builder.operator(FlatOperator::And)?;
+        }
+        kind if kind == node_kinds.or => {
+            builder.operator(FlatOperator::Or)?;
+        }
+        kind if kind == node_kinds.constant => {
+            builder.operator(FlatOperator::Constant)?;
+        }
+        kind if kind == node_kinds.variable => {
+            builder.operator(FlatOperator::Variable)?;
+        }
+        _ => {
+            return Err(Error::FlattenError(format!(
+                "Can not process node of unknown type {}",
+                node.kind()
+            )));
+        }
     }
 
     Ok(())
@@ -192,13 +228,13 @@ impl FlatBuilder for FlatRootBuilder {
 
     fn expression(&mut self, _: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
         Err(Error::FlattenError(
-            "Can not place expressions into root context".to_string(),
+            "Invalid syntax: expressions cannot be placed at the root level, they must be inside a source block".to_string(),
         ))
     }
 
     fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
         Err(Error::FlattenError(
-            "Can not place operators into root context".to_string(),
+            "Invalid syntax: operators cannot be placed at the root level, they must be inside expressions".to_string(),
         ))
     }
 }
@@ -242,7 +278,7 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
 
     fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
         Err(Error::FlattenError(
-            "Can not place operators into source context".to_string(),
+            "Invalid syntax: operators cannot be placed directly in source context, they must be inside binary expressions".to_string(),
         ))
     }
 }
@@ -279,7 +315,9 @@ impl<'a> FlatBinaryBuilder<'a> {
                 operator: operator,
             })
         } else {
-            Err(Error::FlattenError("Incomplete binary node".into()))
+            Err(Error::FlattenError(
+                "Incomplete binary expression".to_string(),
+            ))
         }
     }
 }
@@ -299,7 +337,7 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
                 self.two = Some(index.clone());
             } else {
                 return Err(Error::FlattenError(
-                    "Binary operation can only have two operands".to_string(),
+                    "Invalid binary expression: attempted to add a third operand, but binary operations can only have exactly two operands".to_string(),
                 ));
             }
         }
@@ -310,7 +348,7 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
         if self.operator.is_some() {
             return Err(Error::FlattenError(
-                "Binary operation can only have one operator".to_string(),
+                "Invalid binary expression: attempted to add a second operator, but binary operations can only have exactly one operator".to_string(),
             ));
         }
 
