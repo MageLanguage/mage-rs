@@ -49,7 +49,7 @@ fn flatten_node(
 
         let binary = binary_builder.binary;
 
-        builder.expression(FlatExpression::Additive(binary))?;
+        builder.expression(FlatExpression::Additive(binary), true)?;
     } else if node_kind == node_kinds.assign {
         let mut binary_builder = FlatBinaryBuilder {
             parent: builder,
@@ -62,7 +62,7 @@ fn flatten_node(
 
         let binary = binary_builder.binary;
 
-        builder.expression(FlatExpression::Assign(binary))?;
+        builder.expression(FlatExpression::Assign(binary), true)?;
     } else if node_kind == node_kinds.parenthesize {
         for child in node.named_children(&mut node.walk()) {
             flatten_node(builder, node_kinds, child, code)?;
@@ -72,11 +72,11 @@ fn flatten_node(
         || node_kind == node_kinds.decimal
         || node_kind == node_kinds.hex
     {
-        builder.expression(FlatExpression::Number(node_text.to_string()))?;
+        builder.expression(FlatExpression::Number(node_text.to_string()), true)?;
     } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted {
-        builder.expression(FlatExpression::String(node_text.to_string()))?;
+        builder.expression(FlatExpression::String(node_text.to_string()), true)?;
     } else if node_kind == node_kinds.identifier {
-        builder.expression(FlatExpression::Identifier(node_text.to_string()))?;
+        builder.expression(FlatExpression::Identifier(node_text.to_string()), true)?;
     } else if node_kind == node_kinds.add {
         builder.operator(FlatOperator::Add)?;
     } else if node_kind == node_kinds.constant {
@@ -88,7 +88,7 @@ fn flatten_node(
 
 trait FlatBuilder {
     fn source(&mut self, source: FlatSource) -> Result<(), Error>;
-    fn expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error>;
+    fn expression(&mut self, expression: FlatExpression, take: bool) -> Result<FlatIndex, Error>;
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error>;
 }
 
@@ -115,7 +115,7 @@ impl FlatBuilder for FlatRootBuilder {
         Ok(())
     }
 
-    fn expression(&mut self, _: FlatExpression) -> Result<FlatIndex, Error> {
+    fn expression(&mut self, _: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
         Err(Error::FlattenError(
             "Can not place expressions into root context".to_string(),
         ))
@@ -152,7 +152,7 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
         Ok(())
     }
 
-    fn expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
+    fn expression(&mut self, expression: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
         let index = FlatIndex::Expression(self.source.expressions.len());
         self.source.expressions.push(expression);
         Ok(index)
@@ -192,17 +192,19 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
         self.parent.source(source)
     }
 
-    fn expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
-        let index = self.parent.expression(expression)?;
+    fn expression(&mut self, expression: FlatExpression, take: bool) -> Result<FlatIndex, Error> {
+        let index = self.parent.expression(expression.clone(), false)?;
 
-        if self.binary.one.is_none() {
-            self.binary.one = Some(index.clone());
-        } else if self.binary.two.is_none() {
-            self.binary.two = Some(index.clone());
-        } else {
-            return Err(Error::FlattenError(
-                "Binary operation can only have two operands".to_string(),
-            ));
+        if take {
+            if self.binary.one.is_none() {
+                self.binary.one = Some(index.clone());
+            } else if self.binary.two.is_none() {
+                self.binary.two = Some(index.clone());
+            } else {
+                return Err(Error::FlattenError(
+                    "Binary operation can only have two operands".to_string(),
+                ));
+            }
         }
 
         Ok(index)
@@ -214,7 +216,9 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
                 "Binary operation can only have one operator".to_string(),
             ));
         }
-        self.binary.operator = Some(operator);
+
+        self.binary.operator = Some(operator.clone());
+
         Ok(())
     }
 }
