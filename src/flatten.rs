@@ -4,13 +4,11 @@ use tree_sitter::{Node, Tree};
 use crate::{Error, NodeKinds};
 
 pub fn flatten_tree(node_kinds: &NodeKinds, tree: Tree, code: &str) -> Result<FlatRoot, Error> {
-    let mut root_builder = FlatRootBuilder {
-        root: FlatRoot::new(),
-    };
+    let mut root_builder = FlatRootBuilder::new();
 
     flatten_node(&mut root_builder, node_kinds, tree.root_node(), code)?;
 
-    Ok(root_builder.root)
+    Ok(root_builder.root()?)
 }
 
 fn flatten_node(
@@ -25,107 +23,83 @@ fn flatten_node(
         .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
 
     if node_kind == node_kinds.source_file || node_kind == node_kinds.source {
-        let mut source_builder = FlatSourceBuilder {
-            parent: builder,
-            source: FlatSource::new(),
-        };
+        let mut source_builder = FlatSourceBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut source_builder, node_kinds, child, code)?;
         }
 
-        let source = source_builder.source;
+        let source = source_builder.source()?;
 
         builder.source(source)?;
     } else if node_kind == node_kinds.member {
-        let mut binary_builder = FlatBinaryBuilder {
-            parent: builder,
-            binary: FlatBinary::new(),
-        };
+        let mut binary_builder = FlatBinaryBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut binary_builder, node_kinds, child, code)?;
         }
 
-        let binary = binary_builder.binary;
+        let binary = binary_builder.binary()?;
 
         builder.expression(FlatExpression::Member(binary), true)?;
     } else if node_kind == node_kinds.multiplicative {
-        let mut binary_builder = FlatBinaryBuilder {
-            parent: builder,
-            binary: FlatBinary::new(),
-        };
+        let mut binary_builder = FlatBinaryBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut binary_builder, node_kinds, child, code)?;
         }
 
-        let binary = binary_builder.binary;
+        let binary = binary_builder.binary()?;
 
         builder.expression(FlatExpression::Multiplicative(binary), true)?;
     } else if node_kind == node_kinds.additive {
-        let mut binary_builder = FlatBinaryBuilder {
-            parent: builder,
-            binary: FlatBinary::new(),
-        };
+        let mut binary_builder = FlatBinaryBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut binary_builder, node_kinds, child, code)?;
         }
 
-        let binary = binary_builder.binary;
+        let binary = binary_builder.binary()?;
 
         builder.expression(FlatExpression::Additive(binary), true)?;
     } else if node_kind == node_kinds.comparison {
-        let mut binary_builder = FlatBinaryBuilder {
-            parent: builder,
-            binary: FlatBinary::new(),
-        };
+        let mut binary_builder = FlatBinaryBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut binary_builder, node_kinds, child, code)?;
         }
 
-        let binary = binary_builder.binary;
+        let binary = binary_builder.binary()?;
 
         builder.expression(FlatExpression::Comparison(binary), true)?;
     } else if node_kind == node_kinds.logical {
-        let mut binary_builder = FlatBinaryBuilder {
-            parent: builder,
-            binary: FlatBinary::new(),
-        };
+        let mut binary_builder = FlatBinaryBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut binary_builder, node_kinds, child, code)?;
         }
 
-        let binary = binary_builder.binary;
+        let binary = binary_builder.binary()?;
 
         builder.expression(FlatExpression::Logical(binary), true)?;
     } else if node_kind == node_kinds.call {
-        let mut binary_builder = FlatBinaryBuilder {
-            parent: builder,
-            binary: FlatBinary::new(),
-        };
+        let mut binary_builder = FlatBinaryBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut binary_builder, node_kinds, child, code)?;
         }
 
-        let binary = binary_builder.binary;
+        let binary = binary_builder.binary()?;
 
         builder.expression(FlatExpression::Call(binary), true)?;
     } else if node_kind == node_kinds.assign {
-        let mut binary_builder = FlatBinaryBuilder {
-            parent: builder,
-            binary: FlatBinary::new(),
-        };
+        let mut binary_builder = FlatBinaryBuilder::new(builder);
 
         for child in node.named_children(&mut node.walk()) {
             flatten_node(&mut binary_builder, node_kinds, child, code)?;
         }
 
-        let binary = binary_builder.binary;
+        let binary = binary_builder.binary()?;
 
         builder.expression(FlatExpression::Assign(binary), true)?;
     } else if node_kind == node_kinds.parenthesize {
@@ -189,24 +163,30 @@ trait FlatBuilder {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatRoot {
+    pub sources: Vec<FlatSource>,
+}
+
+pub struct FlatRootBuilder {
     sources: Vec<FlatSource>,
 }
 
-impl FlatRoot {
-    pub fn new() -> Self {
+impl FlatRootBuilder {
+    fn new() -> Self {
         Self {
             sources: Vec::new(),
         }
     }
-}
 
-pub struct FlatRootBuilder {
-    root: FlatRoot,
+    fn root(self) -> Result<FlatRoot, Error> {
+        Ok(FlatRoot {
+            sources: self.sources,
+        })
+    }
 }
 
 impl FlatBuilder for FlatRootBuilder {
     fn source(&mut self, source: FlatSource) -> Result<(), Error> {
-        self.root.sources.push(source);
+        self.sources.push(source);
         Ok(())
     }
 
@@ -225,20 +205,27 @@ impl FlatBuilder for FlatRootBuilder {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatSource {
-    expressions: Vec<FlatExpression>,
-}
-
-impl FlatSource {
-    pub fn new() -> Self {
-        Self {
-            expressions: Vec::new(),
-        }
-    }
+    pub expressions: Vec<FlatExpression>,
 }
 
 pub struct FlatSourceBuilder<'a> {
     parent: &'a mut dyn FlatBuilder,
-    source: FlatSource,
+    expressions: Vec<FlatExpression>,
+}
+
+impl<'a> FlatSourceBuilder<'a> {
+    fn new(parent: &'a mut dyn FlatBuilder) -> Self {
+        Self {
+            parent: parent,
+            expressions: Vec::new(),
+        }
+    }
+
+    fn source(self) -> Result<FlatSource, Error> {
+        Ok(FlatSource {
+            expressions: self.expressions,
+        })
+    }
 }
 
 impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
@@ -248,8 +235,8 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
     }
 
     fn expression(&mut self, expression: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
-        let index = FlatIndex::Expression(self.source.expressions.len());
-        self.source.expressions.push(expression);
+        let index = FlatIndex::Expression(self.expressions.len());
+        self.expressions.push(expression);
         Ok(index)
     }
 
@@ -262,24 +249,39 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatBinary {
-    pub one: Option<FlatIndex>,
-    pub two: Option<FlatIndex>,
-    pub operator: Option<FlatOperator>,
+    pub one: FlatIndex,
+    pub two: FlatIndex,
+    pub operator: FlatOperator,
 }
 
-impl FlatBinary {
-    pub fn new() -> Self {
-        Self {
+pub struct FlatBinaryBuilder<'a> {
+    parent: &'a mut dyn FlatBuilder,
+    one: Option<FlatIndex>,
+    two: Option<FlatIndex>,
+    operator: Option<FlatOperator>,
+}
+
+impl<'a> FlatBinaryBuilder<'a> {
+    fn new(parent: &'a mut dyn FlatBuilder) -> Self {
+        FlatBinaryBuilder {
+            parent: parent,
             one: None,
             two: None,
             operator: None,
         }
     }
-}
 
-pub struct FlatBinaryBuilder<'a> {
-    parent: &'a mut dyn FlatBuilder,
-    binary: FlatBinary,
+    fn binary(self) -> Result<FlatBinary, Error> {
+        if let (Some(one), Some(two), Some(operator)) = (self.one, self.two, self.operator) {
+            Ok(FlatBinary {
+                one: one,
+                two: two,
+                operator: operator,
+            })
+        } else {
+            Err(Error::FlattenError("Incomplete binary node".into()))
+        }
+    }
 }
 
 impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
@@ -288,13 +290,13 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
     }
 
     fn expression(&mut self, expression: FlatExpression, take: bool) -> Result<FlatIndex, Error> {
-        let index = self.parent.expression(expression.clone(), false)?;
+        let index = self.parent.expression(expression, false)?;
 
         if take {
-            if self.binary.one.is_none() {
-                self.binary.one = Some(index.clone());
-            } else if self.binary.two.is_none() {
-                self.binary.two = Some(index.clone());
+            if self.one.is_none() {
+                self.one = Some(index.clone());
+            } else if self.two.is_none() {
+                self.two = Some(index.clone());
             } else {
                 return Err(Error::FlattenError(
                     "Binary operation can only have two operands".to_string(),
@@ -306,13 +308,13 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
     }
 
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
-        if self.binary.operator.is_some() {
+        if self.operator.is_some() {
             return Err(Error::FlattenError(
                 "Binary operation can only have one operator".to_string(),
             ));
         }
 
-        self.binary.operator = Some(operator.clone());
+        self.operator = Some(operator.clone());
 
         Ok(())
     }
