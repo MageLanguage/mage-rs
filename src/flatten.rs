@@ -37,11 +37,32 @@ fn flatten_node(
         let source = source_builder.source;
 
         builder.source(source)?;
-    } else if node_kind == node_kinds.assign || node_kind == node_kinds.additive {
+    } else if node_kind == node_kinds.additive {
         let mut binary_builder = FlatBinaryBuilder {
             parent: builder,
             binary: FlatBinary::new(),
         };
+
+        for child in node.named_children(&mut node.walk()) {
+            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+        }
+
+        let binary = binary_builder.binary;
+
+        builder.expression(FlatExpression::Additive(binary))?;
+    } else if node_kind == node_kinds.assign {
+        let mut binary_builder = FlatBinaryBuilder {
+            parent: builder,
+            binary: FlatBinary::new(),
+        };
+
+        for child in node.named_children(&mut node.walk()) {
+            flatten_node(&mut binary_builder, node_kinds, child, code)?;
+        }
+
+        let binary = binary_builder.binary;
+
+        builder.expression(FlatExpression::Assign(binary))?;
     } else if node_kind == node_kinds.parenthesize {
         for child in node.named_children(&mut node.walk()) {
             flatten_node(builder, node_kinds, child, code)?;
@@ -67,7 +88,7 @@ fn flatten_node(
 
 trait FlatBuilder {
     fn source(&mut self, source: FlatSource) -> Result<(), Error>;
-    fn expression(&mut self, expression: FlatExpression) -> Result<(), Error>;
+    fn expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error>;
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error>;
 }
 
@@ -94,7 +115,7 @@ impl FlatBuilder for FlatRootBuilder {
         Ok(())
     }
 
-    fn expression(&mut self, _: FlatExpression) -> Result<(), Error> {
+    fn expression(&mut self, _: FlatExpression) -> Result<FlatIndex, Error> {
         Err(Error::FlattenError(
             "Can not place expressions into root context".to_string(),
         ))
@@ -131,9 +152,10 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
         Ok(())
     }
 
-    fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
+    fn expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
+        let index = FlatIndex::Expression(self.source.expressions.len());
         self.source.expressions.push(expression);
-        Ok(())
+        Ok(index)
     }
 
     fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
@@ -163,6 +185,38 @@ impl FlatBinary {
 pub struct FlatBinaryBuilder<'a> {
     parent: &'a mut dyn FlatBuilder,
     binary: FlatBinary,
+}
+
+impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
+    fn source(&mut self, source: FlatSource) -> Result<(), Error> {
+        self.parent.source(source)
+    }
+
+    fn expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
+        let index = self.parent.expression(expression)?;
+
+        if self.binary.one.is_none() {
+            self.binary.one = Some(index.clone());
+        } else if self.binary.two.is_none() {
+            self.binary.two = Some(index.clone());
+        } else {
+            return Err(Error::FlattenError(
+                "Binary operation can only have two operands".to_string(),
+            ));
+        }
+
+        Ok(index)
+    }
+
+    fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
+        if self.binary.operator.is_some() {
+            return Err(Error::FlattenError(
+                "Binary operation can only have one operator".to_string(),
+            ));
+        }
+        self.binary.operator = Some(operator);
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
