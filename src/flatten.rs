@@ -314,7 +314,7 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
             ));
         }
 
-        self.operator = Some(operator.clone());
+        self.operator = Some(operator);
 
         Ok(())
     }
