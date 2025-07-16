@@ -37,7 +37,7 @@ fn flatten_node(
         let source = source_builder.source;
 
         builder.source(source)?;
-    } else if node_kind == node_kinds.assign {
+    } else if node_kind == node_kinds.assign || node_kind == node_kinds.additive {
         let mut binary_builder = FlatBinaryBuilder {
             parent: builder,
             binary: FlatBinary::new(),
@@ -56,6 +56,10 @@ fn flatten_node(
         builder.expression(FlatExpression::String(node_text.to_string()))?;
     } else if node_kind == node_kinds.identifier {
         builder.expression(FlatExpression::Identifier(node_text.to_string()))?;
+    } else if node_kind == node_kinds.add {
+        builder.operator(FlatOperator::Add)?;
+    } else if node_kind == node_kinds.constant {
+        builder.operator(FlatOperator::Constant)?;
     }
 
     Ok(())
@@ -64,6 +68,7 @@ fn flatten_node(
 trait FlatBuilder {
     fn source(&mut self, source: FlatSource) -> Result<(), Error>;
     fn expression(&mut self, expression: FlatExpression) -> Result<(), Error>;
+    fn operator(&mut self, operator: FlatOperator) -> Result<(), Error>;
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -92,6 +97,12 @@ impl FlatBuilder for FlatRootBuilder {
     fn expression(&mut self, _: FlatExpression) -> Result<(), Error> {
         Err(Error::FlattenError(
             "Can not place expressions into root context".to_string(),
+        ))
+    }
+
+    fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
+        Err(Error::FlattenError(
+            "Can not place operators into root context".to_string(),
         ))
     }
 }
@@ -123,6 +134,12 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
     fn expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
         self.source.expressions.push(expression);
         Ok(())
+    }
+
+    fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
+        Err(Error::FlattenError(
+            "Can not place operators into source context".to_string(),
+        ))
     }
 }
 
