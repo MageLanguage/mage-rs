@@ -285,7 +285,7 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatBinary {
-    pub one: FlatIndex,
+    pub one: Option<FlatIndex>,
     pub two: FlatIndex,
     pub operator: FlatOperator,
 }
@@ -308,9 +308,9 @@ impl<'a> FlatBinaryBuilder<'a> {
     }
 
     fn binary(self) -> Result<FlatBinary, Error> {
-        if let (Some(one), Some(two), Some(operator)) = (self.one, self.two, self.operator) {
+        if let (Some(two), Some(operator)) = (self.two, self.operator) {
             Ok(FlatBinary {
-                one: one,
+                one: self.one,
                 two: two,
                 operator: operator,
             })
