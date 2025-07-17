@@ -20,7 +20,7 @@ fn flatten_node(
     let node_kind = node.kind_id();
     let node_text = node
         .utf8_text(code.as_bytes())
-        .map_err(|e| Error::FlattenError(format!("UTF8 error: {}", e)))?;
+        .map_err(|error| Error::FlattenError(format!("UTF8 error: {}", error)))?;
 
     match node_kind {
         kind if kind == node_kinds.source_file || kind == node_kinds.source => {
