@@ -32,7 +32,7 @@ fn flatten_node(
 
             let source = source_builder.source()?;
 
-            builder.source(source)?;
+            builder.source(source, true)?;
         }
         kind if kind == node_kinds.member => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -192,7 +192,7 @@ fn flatten_node(
 }
 
 trait FlatBuilder {
-    fn source(&mut self, source: FlatSource) -> Result<(), Error>;
+    fn source(&mut self, source: FlatSource, take: bool) -> Result<FlatIndex, Error>;
     fn expression(&mut self, expression: FlatExpression, take: bool) -> Result<FlatIndex, Error>;
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error>;
 }
@@ -221,9 +221,10 @@ impl FlatRootBuilder {
 }
 
 impl FlatBuilder for FlatRootBuilder {
-    fn source(&mut self, source: FlatSource) -> Result<(), Error> {
+    fn source(&mut self, source: FlatSource, _: bool) -> Result<FlatIndex, Error> {
+        let index = FlatIndex::Source(self.sources.len());
         self.sources.push(source);
-        Ok(())
+        Ok(index)
     }
 
     fn expression(&mut self, _: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
@@ -265,9 +266,8 @@ impl<'a> FlatSourceBuilder<'a> {
 }
 
 impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
-    fn source(&mut self, source: FlatSource) -> Result<(), Error> {
-        self.parent.source(source)?;
-        Ok(())
+    fn source(&mut self, source: FlatSource, _: bool) -> Result<FlatIndex, Error> {
+        Ok(self.parent.source(source, false)?)
     }
 
     fn expression(&mut self, expression: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
@@ -323,15 +323,29 @@ impl<'a> FlatBinaryBuilder<'a> {
 }
 
 impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
-    fn source(&mut self, source: FlatSource) -> Result<(), Error> {
-        self.parent.source(source)
+    fn source(&mut self, source: FlatSource, take: bool) -> Result<FlatIndex, Error> {
+        let index = self.parent.source(source, false)?;
+
+        if take {
+            if self.one.is_none() && self.operator.is_none() {
+                self.one = Some(index.clone());
+            } else if self.two.is_none() {
+                self.two = Some(index.clone());
+            } else {
+                return Err(Error::FlattenError(
+                    "Invalid binary expression: attempted to add a third operand, but binary operations can only have exactly two operands".to_string(),
+                ));
+            }
+        }
+
+        Ok(index)
     }
 
     fn expression(&mut self, expression: FlatExpression, take: bool) -> Result<FlatIndex, Error> {
         let index = self.parent.expression(expression, false)?;
 
         if take {
-            if self.one.is_none() {
+            if self.one.is_none() && self.operator.is_none() {
                 self.one = Some(index.clone());
             } else if self.two.is_none() {
                 self.two = Some(index.clone());
