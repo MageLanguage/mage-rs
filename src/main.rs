@@ -29,7 +29,6 @@ struct Arguments {
 
 fn main() {
     let Arguments { path, output } = Arguments::parse();
-
     let language = TreeSitterLanguage::from(LANGUAGE);
 
     let mut parser = TreeSitterParser::new();
