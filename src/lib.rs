@@ -1,5 +1,14 @@
+mod mage;
+pub use mage::*;
+
+mod cli;
+pub use cli::*;
+
 mod general;
 pub use general::*;
+
+mod lsp;
+pub use lsp::*;
 
 mod parse;
 pub use parse::*;
