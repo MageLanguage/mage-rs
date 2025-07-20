@@ -18,13 +18,10 @@ pub struct Cli {
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
     /// Run
-    #[command()]
     Run(Run),
     /// Print environment
-    #[command()]
     Environment,
     /// Run language server
-    #[command()]
     LanguageServer,
 }
 
