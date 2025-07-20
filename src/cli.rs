@@ -6,6 +6,12 @@ pub enum Output {
     Json,
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+pub enum Stage {
+    Flatten,
+    Compile,
+}
+
 #[derive(Debug, Clone, Parser)]
 pub struct Cli {
     #[command(subcommand)]
@@ -28,5 +34,9 @@ pub enum Command {
 #[derive(Debug, Clone, Args)]
 pub struct Run {
     /// path
+    #[arg(action)]
     pub path: Option<String>,
+    /// stage
+    #[arg(long, default_value = "flatten")]
+    pub stage: Stage,
 }

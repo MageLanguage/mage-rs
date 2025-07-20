@@ -10,11 +10,11 @@ use mage_rs::{Cli, Command, Mage, Output};
 fn main() {
     let arguments = Cli::parse();
 
-    let mage = Mage::new();
+    let mut mage = Mage::new();
 
     match arguments.command {
         Command::Run(run) => {
-            let process = |mage: &Mage, text: &str| match mage.process(text) {
+            let process = |mage: &mut Mage, text: &str| match mage.process(&run.stage, text) {
                 Ok(root) => match arguments.output {
                     Output::Text => println!("{:#?}", &root),
                     Output::Json => {
@@ -29,14 +29,14 @@ fn main() {
             match run.path {
                 Some(path) => {
                     let file = fs::read_to_string(&path).unwrap();
-                    process(&mage, file.as_str())
+                    process(&mut mage, file.as_str())
                 }
                 None => {
                     let stdin = io::stdin();
 
                     for line in stdin.lock().lines() {
                         if let Ok(text) = line {
-                            process(&mage, text.as_str());
+                            process(&mut mage, text.as_str());
                         }
                     }
                 }

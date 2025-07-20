@@ -7,11 +7,8 @@ pub use cli::*;
 mod general;
 pub use general::*;
 
-mod lsp;
-pub use lsp::*;
-
-mod parse;
-pub use parse::*;
+// mod ls;
+// pub use ls::*;
 
 mod flatten;
 pub use flatten::*;
