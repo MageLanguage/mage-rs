@@ -1,17 +1,37 @@
 use serde::{Deserialize, Serialize};
-use tree_sitter::{Language, Tree};
+use tree_sitter::Language;
 
-use crate::{FlatRoot, flatten_tree};
+use crate::{FlatRoot, Jit, Mage, Stage, compile_root, flatten_tree};
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum Type {
+    Flat(FlatRoot),
+    Jit(Jit),
+}
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Error {
+    MageError(String),
+    ParseError(String),
     FlattenError(String),
+    JitError(String),
 }
 
-pub fn process_tree(language: &Language, tree: Tree, code: &str) -> Result<FlatRoot, Error> {
-    let node_kinds = NodeKinds::new(language);
-    let root = flatten_tree(&node_kinds, tree, code)?;
-    Ok(root)
+impl Mage {
+    pub fn process(&mut self, stage: &Stage, text: &str) -> Result<Type, Error> {
+        let node_kinds = NodeKinds::new(&self.language);
+        let tree = self.parse_text(text)?;
+
+        let root = flatten_tree(&node_kinds, tree, text)?;
+
+        if let Stage::Flatten = stage {
+            return Ok(Type::Flat(root));
+        }
+
+        let jit = compile_root(root)?;
+
+        Ok(Type::Jit(jit))
+    }
 }
 
 pub struct NodeKinds {

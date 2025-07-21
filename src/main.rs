@@ -3,75 +3,52 @@ use std::{
     io::{self, BufRead},
 };
 
-use clap::Parser as CLAParser;
+use clap::Parser;
 
-use tree_sitter::{Language as TreeSitterLanguage, Parser as TreeSitterParser};
-use tree_sitter_mage::LANGUAGE;
-
-use serde::Serialize;
-
-use mage_rs::process_tree;
-
-#[derive(Debug, Clone, Serialize, clap::ValueEnum)]
-enum ArgumentsOutput {
-    Text,
-    Json,
-}
-
-#[derive(CLAParser, Debug)]
-struct Arguments {
-    /// path
-    path: Option<String>,
-    /// output
-    #[arg(long, default_value = "text")]
-    output: ArgumentsOutput,
-}
+use mage_rs::{Cli, Command, Mage, Output};
 
 fn main() {
-    let Arguments { path, output } = Arguments::parse();
+    let arguments = Cli::parse();
 
-    let language = TreeSitterLanguage::from(LANGUAGE);
+    let mut mage = Mage::new().unwrap_or_else(|error| {
+        panic!("Mage error {:?}", error);
+    });
 
-    let mut parser = TreeSitterParser::new();
-    parser.set_language(&language).unwrap();
-
-    match path {
-        Some(path) => {
-            let code = fs::read_to_string(&path).unwrap();
-            let tree = parser.parse(code.as_str(), None).unwrap();
-
-            match process_tree(&language, tree, code.as_str()) {
-                Ok(root) => match output {
-                    ArgumentsOutput::Text => println!("{:#?}", &root),
-                    ArgumentsOutput::Json => {
+    match arguments.command {
+        Command::Run(run) => {
+            let process = |mage: &mut Mage, text: &str| match mage.process(&run.stage, text) {
+                Ok(root) => match arguments.output {
+                    Output::Text => println!("{:#?}", &root),
+                    Output::Json => {
                         println!("{}", serde_json::to_string(&root).unwrap());
                     }
                 },
                 Err(err) => {
-                    eprintln!("Error processing {}: {:?}", path, err);
+                    panic!("Processing error {:?}", err);
                 }
-            }
-        }
-        None => {
-            let stdin = io::stdin();
+            };
 
-            for line in stdin.lock().lines() {
-                if let Ok(code) = line {
-                    let tree = parser.parse(code.as_str(), None).unwrap();
+            match run.path {
+                Some(path) => {
+                    let file = fs::read_to_string(&path).unwrap();
+                    process(&mut mage, file.as_str())
+                }
+                None => {
+                    let stdin = io::stdin();
 
-                    match process_tree(&language, tree, code.as_str()) {
-                        Ok(root) => match output {
-                            ArgumentsOutput::Text => println!("{:#?}", &root),
-                            ArgumentsOutput::Json => {
-                                println!("{}", serde_json::to_string(&root).unwrap())
-                            }
-                        },
-                        Err(err) => {
-                            eprintln!("Error processing input: {:?}", err);
+                    for line in stdin.lock().lines() {
+                        if let Ok(text) = line {
+                            process(&mut mage, text.as_str());
                         }
                     }
                 }
             }
+        }
+        Command::Environment => {
+            panic!("Not implemented")
+        }
+        Command::LanguageServer => {
+            panic!("Not implemented")
         }
     }
 }
