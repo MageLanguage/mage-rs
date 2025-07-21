@@ -10,12 +10,9 @@ use mage_rs::{Cli, Command, Mage, Output};
 fn main() {
     let arguments = Cli::parse();
 
-    let mut mage = match Mage::new() {
-        Ok(mage) => mage,
-        Err(error) => {
-            panic!("Mage error {:?}", error);
-        }
-    };
+    let mut mage = Mage::new().unwrap_or_else(|error| {
+        panic!("Mage error {:?}", error);
+    });
 
     match arguments.command {
         Command::Run(run) => {
