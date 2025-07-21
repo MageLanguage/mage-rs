@@ -11,6 +11,7 @@ pub enum Type {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Error {
+    MageError(String),
     ParseError(String),
     FlattenError(String),
     JitError(String),

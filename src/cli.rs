@@ -34,7 +34,6 @@ pub enum Command {
 #[derive(Debug, Clone, Args)]
 pub struct Run {
     /// path
-    #[arg(action)]
     pub path: Option<String>,
     /// stage
     #[arg(long, default_value = "flatten")]

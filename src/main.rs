@@ -10,7 +10,12 @@ use mage_rs::{Cli, Command, Mage, Output};
 fn main() {
     let arguments = Cli::parse();
 
-    let mut mage = Mage::new();
+    let mut mage = match Mage::new() {
+        Ok(mage) => mage,
+        Err(error) => {
+            panic!("Mage error {:?}", error);
+        }
+    };
 
     match arguments.command {
         Command::Run(run) => {
@@ -22,7 +27,7 @@ fn main() {
                     }
                 },
                 Err(err) => {
-                    eprintln!("Processing error {:?}", err);
+                    panic!("Processing error {:?}", err);
                 }
             };
 
@@ -43,10 +48,10 @@ fn main() {
             }
         }
         Command::Environment => {
-            println!("Not implemented")
+            panic!("Not implemented")
         }
         Command::LanguageServer => {
-            println!("Not implemented")
+            panic!("Not implemented")
         }
     }
 }

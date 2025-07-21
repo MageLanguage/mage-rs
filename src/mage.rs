@@ -13,7 +13,7 @@ pub struct Thread {
 }
 
 impl Mage {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, Error> {
         let mut mage = Mage {
             language: Language::from(LANGUAGE),
             thread: Thread {
@@ -21,9 +21,14 @@ impl Mage {
             },
         };
 
-        mage.thread.parser.set_language(&mage.language).unwrap();
-
-        mage
+        if let Err(error) = mage.thread.parser.set_language(&mage.language) {
+            Err(Error::MageError(format!(
+                "Unable to set language {}",
+                error
+            )))
+        } else {
+            Ok(mage)
+        }
     }
 
     pub fn parse_text(&mut self, text: &str) -> Result<Tree, Error> {
