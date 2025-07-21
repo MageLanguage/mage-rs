@@ -35,7 +35,7 @@ impl Mage {
         if let Some(tree) = self.thread.parser.parse(text, None) {
             Ok(tree)
         } else {
-            Err(Error::ParseError("Unable to parse".to_string()))
+            Err(Error::ParseError("Error: Unable to parse.".to_string()))
         }
     }
 }
