@@ -154,21 +154,33 @@ impl LanguageServer for Backend {
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
         self.client
-            .log_message(MessageType::INFO, "goto_definition")
+            .log_message(
+                MessageType::INFO,
+                format!(
+                    "goto_definition: {}",
+                    params
+                        .text_document_position_params
+                        .text_document
+                        .uri
+                        .to_string()
+                ),
+            )
             .await;
 
-        let uri = params.text_document_position_params.text_document.uri;
+        // let uri = params.text_document_position_params.text_document.uri;
 
-        let start_position = params.text_document_position_params.position;
-        let end_position = Position {
-            line: start_position.line,
-            character: start_position.character + 1,
-        };
+        // let start_position = params.text_document_position_params.position;
+        // let end_position = Position {
+        //     line: start_position.line,
+        //     character: start_position.character + 1,
+        // };
 
-        Ok(Some(GotoDefinitionResponse::Scalar(Location {
-            uri: uri,
-            range: Range::new(start_position, end_position),
-        })))
+        // Ok(Some(GotoDefinitionResponse::Scalar(Location {
+        //     uri: uri,
+        //     range: Range::new(start_position, end_position),
+        // })))
+
+        Ok(None)
     }
 
     async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {

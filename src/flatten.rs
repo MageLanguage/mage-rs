@@ -128,13 +128,7 @@ fn flatten_node<Builder: FlatBuilder>(
             builder.take_expression(FlatExpression::String(node_text.to_string()))?;
         }
         kind if kind == node_kinds.identifier => {
-            let start = node.start_byte();
-            let end = node.end_byte();
-
-            builder.take_expression(FlatExpression::Identifier(FlatIdentifier {
-                text: node_text.to_string(),
-                at: [start, end],
-            }))?;
+            builder.take_expression(FlatExpression::Identifier(node_text.to_string()))?;
         }
         kind if kind == node_kinds.extract => {
             builder.operator(FlatOperator::Extract)?;
@@ -285,12 +279,28 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
     }
 
     fn send_expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
+        if let Some(position) = self
+            .expressions
+            .iter()
+            .position(|current| *current == expression)
+        {
+            return Ok(FlatIndex::Expression(position));
+        }
+
         let index = FlatIndex::Expression(self.expressions.len());
         self.expressions.push(expression);
         Ok(index)
     }
 
     fn take_expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
+        if let Some(position) = self
+            .expressions
+            .iter()
+            .position(|current| *current == expression)
+        {
+            return Ok(FlatIndex::Expression(position));
+        }
+
         let index = FlatIndex::Expression(self.expressions.len());
         self.expressions.push(expression);
         Ok(index)
@@ -405,13 +415,7 @@ pub enum FlatExpression {
     Assign(FlatBinary),
     Number(String),
     String(String),
-    Identifier(FlatIdentifier),
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatIdentifier {
-    text: String,
-    at: [usize; 2],
+    Identifier(String),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
