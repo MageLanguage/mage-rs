@@ -145,6 +145,24 @@ impl LanguageServer for Backend {
             .await;
     }
 
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+
+        let start_position = params.text_document_position_params.position;
+        let end_position = Position {
+            line: start_position.line,
+            character: start_position.character + 1,
+        };
+
+        Ok(Some(GotoDefinitionResponse::Scalar(Location {
+            uri: uri,
+            range: Range::new(start_position, end_position),
+        })))
+    }
+
     async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
         Ok(Some(CompletionResponse::Array(vec![
             CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),

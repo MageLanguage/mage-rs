@@ -128,7 +128,13 @@ fn flatten_node<Builder: FlatBuilder>(
             builder.take_expression(FlatExpression::String(node_text.to_string()))?;
         }
         kind if kind == node_kinds.identifier => {
-            builder.take_expression(FlatExpression::Identifier(node_text.to_string()))?;
+            let start = node.start_byte();
+            let end = node.end_byte();
+
+            builder.take_expression(FlatExpression::Identifier(FlatIdentifier {
+                text: node_text.to_string(),
+                at: [start, end],
+            }))?;
         }
         kind if kind == node_kinds.extract => {
             builder.operator(FlatOperator::Extract)?;
@@ -399,7 +405,13 @@ pub enum FlatExpression {
     Assign(FlatBinary),
     Number(String),
     String(String),
-    Identifier(String),
+    Identifier(FlatIdentifier),
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatIdentifier {
+    text: String,
+    at: [usize; 2],
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
