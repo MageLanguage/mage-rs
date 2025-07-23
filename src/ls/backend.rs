@@ -7,17 +7,6 @@ pub struct Backend {
     pub client: Client,
 }
 
-pub const LEGEND_TYPE: &[SemanticTokenType] = &[
-    SemanticTokenType::FUNCTION,
-    SemanticTokenType::VARIABLE,
-    SemanticTokenType::STRING,
-    SemanticTokenType::COMMENT,
-    SemanticTokenType::NUMBER,
-    SemanticTokenType::KEYWORD,
-    SemanticTokenType::OPERATOR,
-    SemanticTokenType::PARAMETER,
-];
-
 impl LanguageServer for Backend {
     async fn initialize(&self, _initialize_params: InitializeParams) -> Result<InitializeResult> {
         let initialize_result = InitializeResult {
@@ -56,7 +45,13 @@ impl LanguageServer for Backend {
                             semantic_tokens_options: SemanticTokensOptions {
                                 work_done_progress_options: WorkDoneProgressOptions::default(),
                                 legend: SemanticTokensLegend {
-                                    token_types: LEGEND_TYPE.into(),
+                                    token_types: vec![
+                                        SemanticTokenType::VARIABLE,
+                                        SemanticTokenType::STRING,
+                                        SemanticTokenType::NUMBER,
+                                        SemanticTokenType::OPERATOR,
+                                        SemanticTokenType::FUNCTION,
+                                    ],
                                     token_modifiers: vec![],
                                 },
                                 range: Some(true),
@@ -78,7 +73,7 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _: InitializedParams) {
         self.client
-            .log_message(MessageType::INFO, "initialized!")
+            .log_message(MessageType::INFO, "initialized")
             .await;
     }
 
@@ -88,25 +83,25 @@ impl LanguageServer for Backend {
 
     async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
         self.client
-            .log_message(MessageType::INFO, "workspace folders changed!")
+            .log_message(MessageType::INFO, "did_change_workspace_folders")
             .await;
     }
 
     async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
         self.client
-            .log_message(MessageType::INFO, "configuration changed!")
+            .log_message(MessageType::INFO, "did_change_configuration")
             .await;
     }
 
     async fn did_change_watched_files(&self, _: DidChangeWatchedFilesParams) {
         self.client
-            .log_message(MessageType::INFO, "watched files have changed!")
+            .log_message(MessageType::INFO, "did_change_watched_files")
             .await;
     }
 
     async fn execute_command(&self, _: ExecuteCommandParams) -> Result<Option<LSPAny>> {
         self.client
-            .log_message(MessageType::INFO, "command executed!")
+            .log_message(MessageType::INFO, "execute_command")
             .await;
 
         match self.client.apply_edit(WorkspaceEdit::default()).await {
@@ -122,26 +117,35 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                format!("file opened: {}", params.text_document.uri.path().as_str()),
+                format!("did_open: {}", params.text_document.uri.to_string()),
             )
             .await;
     }
 
-    async fn did_change(&self, _: DidChangeTextDocumentParams) {
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "file changed!")
+            .log_message(
+                MessageType::INFO,
+                format!("did_change: {}", params.text_document.uri.to_string()),
+            )
             .await;
     }
 
-    async fn did_save(&self, _: DidSaveTextDocumentParams) {
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "file saved!")
+            .log_message(
+                MessageType::INFO,
+                format!("did_save: {}", params.text_document.uri.to_string()),
+            )
             .await;
     }
 
-    async fn did_close(&self, _: DidCloseTextDocumentParams) {
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "file closed!")
+            .log_message(
+                MessageType::INFO,
+                format!("did_close: {}", params.text_document.uri.to_string()),
+            )
             .await;
     }
 
@@ -149,6 +153,10 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
+        self.client
+            .log_message(MessageType::INFO, "goto_definition")
+            .await;
+
         let uri = params.text_document_position_params.text_document.uri;
 
         let start_position = params.text_document_position_params.position;
@@ -164,9 +172,36 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        Ok(Some(CompletionResponse::Array(vec![
-            CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
-            CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
-        ])))
+        self.client
+            .log_message(MessageType::INFO, "goto_definition")
+            .await;
+        Ok(None)
+    }
+
+    async fn references(&self, _: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        self.client
+            .log_message(MessageType::INFO, "goto_definition")
+            .await;
+        Ok(None)
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        _: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        self.client
+            .log_message(MessageType::INFO, "semantic_tokens_full")
+            .await;
+        Ok(None)
+    }
+
+    async fn semantic_tokens_range(
+        &self,
+        _: SemanticTokensRangeParams,
+    ) -> Result<Option<SemanticTokensRangeResult>> {
+        self.client
+            .log_message(MessageType::INFO, "semantic_tokens_range")
+            .await;
+        Ok(None)
     }
 }
