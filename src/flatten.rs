@@ -11,16 +11,17 @@ pub fn flatten_tree(node_kinds: &NodeKinds, tree: Tree, code: &str) -> Result<Fl
     Ok(root_builder.root()?)
 }
 
-fn flatten_node(
-    builder: &mut dyn FlatBuilder,
+fn flatten_node<Builder: FlatBuilder>(
+    builder: &mut Builder,
     node_kinds: &NodeKinds,
     node: Node,
     code: &str,
 ) -> Result<(), Error> {
     let node_kind = node.kind_id();
-    let node_text = node
-        .utf8_text(code.as_bytes())
-        .map_err(|error| Error::FlattenError(format!("UTF8 error: {}", error)))?;
+
+    let node_text = node.utf8_text(code.as_bytes()).map_err(|error| {
+        Error::FlattenError(format!("Error: Failed to extract UTF-8 text: {}.", error))
+    })?;
 
     match node_kind {
         kind if kind == node_kinds.source_file || kind == node_kinds.source => {
@@ -32,7 +33,7 @@ fn flatten_node(
 
             let source = source_builder.source()?;
 
-            builder.source(source, true)?;
+            builder.take_source(source)?;
         }
         kind if kind == node_kinds.member => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -43,7 +44,7 @@ fn flatten_node(
 
             let binary = binary_builder.binary()?;
 
-            builder.expression(FlatExpression::Member(binary), true)?;
+            builder.take_expression(FlatExpression::Member(binary))?;
         }
         kind if kind == node_kinds.multiplicative => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -54,7 +55,7 @@ fn flatten_node(
 
             let binary = binary_builder.binary()?;
 
-            builder.expression(FlatExpression::Multiplicative(binary), true)?;
+            builder.take_expression(FlatExpression::Multiplicative(binary))?;
         }
         kind if kind == node_kinds.additive => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -65,7 +66,7 @@ fn flatten_node(
 
             let binary = binary_builder.binary()?;
 
-            builder.expression(FlatExpression::Additive(binary), true)?;
+            builder.take_expression(FlatExpression::Additive(binary))?;
         }
         kind if kind == node_kinds.comparison => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -76,7 +77,7 @@ fn flatten_node(
 
             let binary = binary_builder.binary()?;
 
-            builder.expression(FlatExpression::Comparison(binary), true)?;
+            builder.take_expression(FlatExpression::Comparison(binary))?;
         }
         kind if kind == node_kinds.logical => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -87,7 +88,7 @@ fn flatten_node(
 
             let binary = binary_builder.binary()?;
 
-            builder.expression(FlatExpression::Logical(binary), true)?;
+            builder.take_expression(FlatExpression::Logical(binary))?;
         }
         kind if kind == node_kinds.call => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -98,7 +99,7 @@ fn flatten_node(
 
             let binary = binary_builder.binary()?;
 
-            builder.expression(FlatExpression::Call(binary), true)?;
+            builder.take_expression(FlatExpression::Call(binary))?;
         }
         kind if kind == node_kinds.assign => {
             let mut binary_builder = FlatBinaryBuilder::new(builder);
@@ -109,7 +110,7 @@ fn flatten_node(
 
             let binary = binary_builder.binary()?;
 
-            builder.expression(FlatExpression::Assign(binary), true)?;
+            builder.take_expression(FlatExpression::Assign(binary))?;
         }
         kind if kind == node_kinds.parenthesize => {
             for child in node.named_children(&mut node.walk()) {
@@ -121,13 +122,13 @@ fn flatten_node(
             || kind == node_kinds.decimal
             || kind == node_kinds.hex =>
         {
-            builder.expression(FlatExpression::Number(node_text.to_string()), true)?;
+            builder.take_number(FlatNumber(node_text.to_string()))?;
         }
         kind if kind == node_kinds.single_quoted || kind == node_kinds.double_quoted => {
-            builder.expression(FlatExpression::String(node_text.to_string()), true)?;
+            builder.take_string(FlatString(node_text.to_string()))?;
         }
         kind if kind == node_kinds.identifier => {
-            builder.expression(FlatExpression::Identifier(node_text.to_string()), true)?;
+            builder.take_identifier(FlatIdentifier(node_text.to_string()))?;
         }
         kind if kind == node_kinds.extract => {
             builder.operator(FlatOperator::Extract)?;
@@ -182,7 +183,7 @@ fn flatten_node(
         }
         _ => {
             return Err(Error::FlattenError(format!(
-                "Can not process node of unknown type {}",
+                "Error: Cannot process node of unknown type {}.",
                 node.kind()
             )));
         }
@@ -192,50 +193,119 @@ fn flatten_node(
 }
 
 trait FlatBuilder {
-    fn source(&mut self, source: FlatSource, take: bool) -> Result<FlatIndex, Error>;
-    fn expression(&mut self, expression: FlatExpression, take: bool) -> Result<FlatIndex, Error>;
+    fn send_source(&mut self, source: FlatSource) -> Result<FlatIndex, Error>;
+    fn take_source(&mut self, source: FlatSource) -> Result<(), Error> {
+        self.send_source(source)?;
+        Ok(())
+    }
+
+    fn send_expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error>;
+    fn take_expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
+        self.send_expression(expression)?;
+        Ok(())
+    }
+
+    fn send_number(&mut self, number: FlatNumber) -> Result<FlatIndex, Error>;
+    fn take_number(&mut self, number: FlatNumber) -> Result<(), Error> {
+        self.send_number(number)?;
+        Ok(())
+    }
+
+    fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error>;
+    fn take_string(&mut self, string: FlatString) -> Result<(), Error> {
+        self.send_string(string)?;
+        Ok(())
+    }
+
+    fn send_identifier(&mut self, identifier: FlatIdentifier) -> Result<FlatIndex, Error>;
+    fn take_identifier(&mut self, identifier: FlatIdentifier) -> Result<(), Error> {
+        self.send_identifier(identifier)?;
+        Ok(())
+    }
+
+    fn index(&mut self, index: FlatIndex) -> Result<(), Error>;
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error>;
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatRoot {
     pub sources: Vec<FlatSource>,
+    pub numbers: Vec<FlatNumber>,
+    pub strings: Vec<FlatString>,
 }
 
 pub struct FlatRootBuilder {
     sources: Vec<FlatSource>,
+    numbers: Vec<FlatNumber>,
+    strings: Vec<FlatString>,
 }
 
 impl FlatRootBuilder {
     fn new() -> Self {
         Self {
             sources: Vec::new(),
+            numbers: Vec::new(),
+            strings: Vec::new(),
         }
     }
 
     fn root(self) -> Result<FlatRoot, Error> {
         Ok(FlatRoot {
             sources: self.sources,
+            numbers: self.numbers,
+            strings: self.strings,
         })
     }
 }
 
 impl FlatBuilder for FlatRootBuilder {
-    fn source(&mut self, source: FlatSource, _: bool) -> Result<FlatIndex, Error> {
+    fn send_source(&mut self, source: FlatSource) -> Result<FlatIndex, Error> {
         let index = FlatIndex::Source(self.sources.len());
         self.sources.push(source);
         Ok(index)
     }
 
-    fn expression(&mut self, _: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
+    fn send_expression(&mut self, _: FlatExpression) -> Result<FlatIndex, Error> {
         Err(Error::FlattenError(
-            "Invalid syntax: expressions cannot be placed at the root level, they must be inside a source block".to_string(),
+            "Error: Invalid syntax - expressions cannot be placed at the root level; they must be inside a source block.".to_string(),
+        ))
+    }
+
+    fn send_number(&mut self, number: FlatNumber) -> Result<FlatIndex, Error> {
+        if let Some(position) = self.numbers.iter().position(|current| *current == number) {
+            return Ok(FlatIndex::Number(position));
+        }
+
+        let index = FlatIndex::Number(self.numbers.len());
+        self.numbers.push(number);
+        Ok(index)
+    }
+
+    fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error> {
+        if let Some(position) = self.strings.iter().position(|current| *current == string) {
+            return Ok(FlatIndex::String(position));
+        }
+
+        let index = FlatIndex::String(self.strings.len());
+        self.strings.push(string);
+        Ok(index)
+    }
+
+    fn send_identifier(&mut self, _: FlatIdentifier) -> Result<FlatIndex, Error> {
+        Err(Error::FlattenError(
+            "Error: Invalid syntax - identifiers cannot be placed at the root level; they must be inside a source block.".to_string(),
+        ))
+    }
+
+    fn index(&mut self, _: FlatIndex) -> Result<(), Error> {
+        Err(Error::FlattenError(
+            "Error: Invalid syntax - indexes cannot be placed at the root level; they must be inside expressions.".to_string(),
         ))
     }
 
     fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
         Err(Error::FlattenError(
-            "Invalid syntax: operators cannot be placed at the root level, they must be inside expressions".to_string(),
+            "Error: Invalid syntax - operators cannot be placed at the root level; they must be inside expressions.".to_string(),
         ))
     }
 }
@@ -243,11 +313,13 @@ impl FlatBuilder for FlatRootBuilder {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatSource {
     pub expressions: Vec<FlatExpression>,
+    pub identifiers: Vec<FlatIdentifier>,
 }
 
 pub struct FlatSourceBuilder<'a> {
     parent: &'a mut dyn FlatBuilder,
     expressions: Vec<FlatExpression>,
+    identifiers: Vec<FlatIdentifier>,
 }
 
 impl<'a> FlatSourceBuilder<'a> {
@@ -255,30 +327,60 @@ impl<'a> FlatSourceBuilder<'a> {
         Self {
             parent: parent,
             expressions: Vec::new(),
+            identifiers: Vec::new(),
         }
     }
 
     fn source(self) -> Result<FlatSource, Error> {
         Ok(FlatSource {
             expressions: self.expressions,
+            identifiers: self.identifiers,
         })
     }
 }
 
 impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
-    fn source(&mut self, source: FlatSource, _: bool) -> Result<FlatIndex, Error> {
-        Ok(self.parent.source(source, false)?)
+    fn send_source(&mut self, source: FlatSource) -> Result<FlatIndex, Error> {
+        Ok(self.parent.send_source(source)?)
     }
 
-    fn expression(&mut self, expression: FlatExpression, _: bool) -> Result<FlatIndex, Error> {
+    fn send_expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
         let index = FlatIndex::Expression(self.expressions.len());
         self.expressions.push(expression);
         Ok(index)
     }
 
+    fn send_number(&mut self, number: FlatNumber) -> Result<FlatIndex, Error> {
+        self.parent.send_number(number)
+    }
+
+    fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error> {
+        self.parent.send_string(string)
+    }
+
+    fn send_identifier(&mut self, identifier: FlatIdentifier) -> Result<FlatIndex, Error> {
+        if let Some(position) = self
+            .identifiers
+            .iter()
+            .position(|current| *current == identifier)
+        {
+            return Ok(FlatIndex::Identifier(position));
+        }
+
+        let index = FlatIndex::Identifier(self.identifiers.len());
+        self.identifiers.push(identifier);
+        Ok(index)
+    }
+
+    fn index(&mut self, _: FlatIndex) -> Result<(), Error> {
+        Err(Error::FlattenError(
+            "Error: Invalid syntax - indexes cannot be placed directly in a source block; they must be inside binary expressions.".to_string(),
+        ))
+    }
+
     fn operator(&mut self, _: FlatOperator) -> Result<(), Error> {
         Err(Error::FlattenError(
-            "Invalid syntax: operators cannot be placed directly in source context, they must be inside binary expressions".to_string(),
+            "Error: Invalid syntax - operators cannot be placed directly in a source block; they must be inside binary expressions.".to_string(),
         ))
     }
 }
@@ -316,53 +418,76 @@ impl<'a> FlatBinaryBuilder<'a> {
             })
         } else {
             Err(Error::FlattenError(
-                "Incomplete binary expression".to_string(),
+                "Error: Incomplete binary expression.".to_string(),
             ))
         }
     }
 }
 
 impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
-    fn source(&mut self, source: FlatSource, take: bool) -> Result<FlatIndex, Error> {
-        let index = self.parent.source(source, false)?;
-
-        if take {
-            if self.one.is_none() && self.operator.is_none() {
-                self.one = Some(index.clone());
-            } else if self.two.is_none() {
-                self.two = Some(index.clone());
-            } else {
-                return Err(Error::FlattenError(
-                    "Invalid binary expression: attempted to add a third operand, but binary operations can only have exactly two operands".to_string(),
-                ));
-            }
-        }
-
-        Ok(index)
+    fn send_source(&mut self, source: FlatSource) -> Result<FlatIndex, Error> {
+        self.parent.send_source(source)
     }
 
-    fn expression(&mut self, expression: FlatExpression, take: bool) -> Result<FlatIndex, Error> {
-        let index = self.parent.expression(expression, false)?;
+    fn take_source(&mut self, source: FlatSource) -> Result<(), Error> {
+        let index = self.send_source(source)?;
+        self.index(index)
+    }
 
-        if take {
-            if self.one.is_none() && self.operator.is_none() {
-                self.one = Some(index.clone());
-            } else if self.two.is_none() {
-                self.two = Some(index.clone());
-            } else {
-                return Err(Error::FlattenError(
-                    "Invalid binary expression: attempted to add a third operand, but binary operations can only have exactly two operands".to_string(),
-                ));
-            }
+    fn send_expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
+        self.parent.send_expression(expression)
+    }
+
+    fn take_expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
+        let index = self.send_expression(expression)?;
+        self.index(index)
+    }
+
+    fn send_number(&mut self, number: FlatNumber) -> Result<FlatIndex, Error> {
+        self.parent.send_number(number)
+    }
+
+    fn take_number(&mut self, number: FlatNumber) -> Result<(), Error> {
+        let index = self.send_number(number)?;
+        self.index(index)
+    }
+
+    fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error> {
+        self.parent.send_string(string)
+    }
+
+    fn take_string(&mut self, string: FlatString) -> Result<(), Error> {
+        let index = self.send_string(string)?;
+        self.index(index)
+    }
+
+    fn send_identifier(&mut self, identifier: FlatIdentifier) -> Result<FlatIndex, Error> {
+        self.parent.send_identifier(identifier)
+    }
+
+    fn take_identifier(&mut self, identifier: FlatIdentifier) -> Result<(), Error> {
+        let index = self.send_identifier(identifier)?;
+        self.index(index)
+    }
+
+    fn index(&mut self, index: FlatIndex) -> Result<(), Error> {
+        if self.one.is_none() && self.operator.is_none() {
+            self.one = Some(index);
+        } else if self.two.is_none() {
+            self.two = Some(index);
+        } else {
+            return Err(Error::FlattenError(
+                "Error: Invalid binary expression - attempted to add a third operand, but binary operations can only have exactly two operands.".to_string(),
+            ));
         }
 
-        Ok(index)
+        Ok(())
     }
 
     fn operator(&mut self, operator: FlatOperator) -> Result<(), Error> {
         if self.operator.is_some() {
             return Err(Error::FlattenError(
-                "Invalid binary expression: attempted to add a second operator, but binary operations can only have exactly one operator".to_string(),
+                "Error: Invalid binary expression - attempted to add a second operator, but binary operations can only have exactly one operator.".to_string(),
             ));
         }
 
@@ -381,15 +506,24 @@ pub enum FlatExpression {
     Comparison(FlatBinary),
     Logical(FlatBinary),
     Assign(FlatBinary),
-    Number(String),
-    String(String),
-    Identifier(String),
 }
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatNumber(String);
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatString(String);
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FlatIdentifier(String);
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatIndex {
     Source(usize),
     Expression(usize),
+    Number(usize),
+    String(usize),
+    Identifier(usize),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]

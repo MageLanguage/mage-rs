@@ -5,7 +5,9 @@ use std::{
 
 use clap::Parser;
 
-use mage_rs::{Cli, Command, Mage, Output};
+use mage_rs::{Backend, Cli, Command, Mage, Output};
+use tokio::runtime::Runtime;
+use tower_lsp_server::{LspService, Server};
 
 fn main() {
     let arguments = Cli::parse();
@@ -48,7 +50,14 @@ fn main() {
             panic!("Not implemented")
         }
         Command::LanguageServer => {
-            panic!("Not implemented")
+            let rt = Runtime::new().unwrap();
+
+            rt.block_on(async {
+                let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
+
+                let (service, socket) = LspService::new(|client| Backend { client });
+                Server::new(stdin, stdout, socket).serve(service).await;
+            });
         }
     }
 }
