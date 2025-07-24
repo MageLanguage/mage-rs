@@ -265,11 +265,6 @@ impl FlatBuilder for FlatRootBuilder {
         Ok(index)
     }
 
-    fn take_source(&mut self, source: FlatSource) -> Result<(), Error> {
-        self.send_source(source)?;
-        Ok(())
-    }
-
     fn send_expression(&mut self, _: FlatExpression) -> Result<FlatIndex, Error> {
         Err(Error::FlattenError(
             "Error: Invalid syntax - expressions cannot be placed at the root level; they must be inside a source block.".to_string(),
@@ -277,13 +272,13 @@ impl FlatBuilder for FlatRootBuilder {
     }
 
     fn send_number(&mut self, number: FlatNumber) -> Result<FlatIndex, Error> {
-        let index = FlatIndex::Source(self.sources.len());
+        let index = FlatIndex::Number(self.sources.len());
         self.numbers.push(number);
         Ok(index)
     }
 
     fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error> {
-        let index = FlatIndex::Source(self.sources.len());
+        let index = FlatIndex::String(self.sources.len());
         self.strings.push(string);
         Ok(index)
     }
@@ -341,38 +336,18 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
         Ok(self.parent.send_source(source)?)
     }
 
-    fn take_source(&mut self, source: FlatSource) -> Result<(), Error> {
-        self.parent.send_source(source)?;
-        Ok(())
-    }
-
     fn send_expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
         let index = FlatIndex::Expression(self.expressions.len());
         self.expressions.push(expression);
         Ok(index)
     }
 
-    fn take_expression(&mut self, expression: FlatExpression) -> Result<(), Error> {
-        self.send_expression(expression)?;
-        Ok(())
-    }
-
     fn send_number(&mut self, number: FlatNumber) -> Result<FlatIndex, Error> {
         self.parent.send_number(number)
     }
 
-    fn take_number(&mut self, number: FlatNumber) -> Result<(), Error> {
-        self.send_number(number)?;
-        Ok(())
-    }
-
     fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error> {
         self.parent.send_string(string)
-    }
-
-    fn take_string(&mut self, string: FlatString) -> Result<(), Error> {
-        self.send_string(string)?;
-        Ok(())
     }
 
     fn send_identifier(&mut self, identifier: FlatIdentifier) -> Result<FlatIndex, Error> {
