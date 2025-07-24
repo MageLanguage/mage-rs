@@ -276,7 +276,7 @@ impl FlatBuilder for FlatRootBuilder {
             return Ok(FlatIndex::Number(position));
         }
 
-        let index = FlatIndex::Number(self.sources.len());
+        let index = FlatIndex::Number(self.numbers.len());
         self.numbers.push(number);
         Ok(index)
     }
@@ -286,7 +286,7 @@ impl FlatBuilder for FlatRootBuilder {
             return Ok(FlatIndex::String(position));
         }
 
-        let index = FlatIndex::String(self.sources.len());
+        let index = FlatIndex::String(self.strings.len());
         self.strings.push(string);
         Ok(index)
     }
