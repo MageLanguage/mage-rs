@@ -272,12 +272,20 @@ impl FlatBuilder for FlatRootBuilder {
     }
 
     fn send_number(&mut self, number: FlatNumber) -> Result<FlatIndex, Error> {
+        if let Some(position) = self.numbers.iter().position(|current| *current == number) {
+            return Ok(FlatIndex::Number(position));
+        }
+
         let index = FlatIndex::Number(self.sources.len());
         self.numbers.push(number);
         Ok(index)
     }
 
     fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error> {
+        if let Some(position) = self.strings.iter().position(|current| *current == string) {
+            return Ok(FlatIndex::String(position));
+        }
+
         let index = FlatIndex::String(self.sources.len());
         self.strings.push(string);
         Ok(index)
@@ -351,6 +359,14 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
     }
 
     fn send_identifier(&mut self, identifier: FlatIdentifier) -> Result<FlatIndex, Error> {
+        if let Some(position) = self
+            .identifiers
+            .iter()
+            .position(|current| *current == identifier)
+        {
+            return Ok(FlatIndex::Identifier(position));
+        }
+
         let index = FlatIndex::Identifier(self.identifiers.len());
         self.identifiers.push(identifier);
         Ok(index)
