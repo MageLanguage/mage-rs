@@ -472,9 +472,9 @@ impl<'a> FlatBuilder for FlatBinaryBuilder<'a> {
 
     fn index(&mut self, index: FlatIndex) -> Result<(), Error> {
         if self.one.is_none() && self.operator.is_none() {
-            self.one = Some(index.clone());
+            self.one = Some(index);
         } else if self.two.is_none() {
-            self.two = Some(index.clone());
+            self.two = Some(index);
         } else {
             return Err(Error::FlattenError(
                 "Error: Invalid binary expression - attempted to add a third operand, but binary operations can only have exactly two operands.".to_string(),
