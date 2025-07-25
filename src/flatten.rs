@@ -323,8 +323,20 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
         self.parent.send_number(number)
     }
 
+    fn take_number(&mut self, number: FlatNumber) -> Result<(), Error> {
+        let index = self.send_number(number)?;
+        self.expressions.push(FlatExpression::Number(index));
+        Ok(())
+    }
+
     fn send_string(&mut self, string: FlatString) -> Result<FlatIndex, Error> {
         self.parent.send_string(string)
+    }
+
+    fn take_string(&mut self, string: FlatString) -> Result<(), Error> {
+        let index = self.send_string(string)?;
+        self.expressions.push(FlatExpression::String(index));
+        Ok(())
     }
 
     fn send_identifier(&mut self, identifier: FlatIdentifier) -> Result<FlatIndex, Error> {
@@ -339,6 +351,12 @@ impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
         let index = FlatIndex::Identifier(self.identifiers.len());
         self.identifiers.push(identifier);
         Ok(index)
+    }
+
+    fn take_identifier(&mut self, identifier: FlatIdentifier) -> Result<(), Error> {
+        let index = self.send_identifier(identifier)?;
+        self.expressions.push(FlatExpression::Identifier(index));
+        Ok(())
     }
 
     fn index(&mut self, _: FlatIndex) -> Result<(), Error> {
@@ -475,6 +493,9 @@ pub enum FlatExpression {
     Comparison(FlatBinary),
     Logical(FlatBinary),
     Assign(FlatBinary),
+    Number(FlatIndex),
+    String(FlatIndex),
+    Identifier(FlatIndex),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
