@@ -212,9 +212,9 @@ pub struct FlatRootBuilder {
 impl FlatRootBuilder {
     fn new() -> Self {
         Self {
-            sources: Vec::new(),
-            numbers: Vec::new(),
-            strings: Vec::new(),
+            sources: vec![],
+            numbers: vec![],
+            strings: vec![],
         }
     }
 
@@ -295,8 +295,8 @@ impl<'a> FlatSourceBuilder<'a> {
     fn new(parent: &'a mut dyn FlatBuilder) -> Self {
         Self {
             parent: parent,
-            expressions: Vec::new(),
-            identifiers: Vec::new(),
+            expressions: vec![],
+            identifiers: vec![],
         }
     }
 
