@@ -16,5 +16,8 @@ pub use flatten::*;
 mod jit;
 pub use jit::*;
 
+mod execute;
+pub use execute::*;
+
 #[cfg(test)]
 mod flatten_tests;

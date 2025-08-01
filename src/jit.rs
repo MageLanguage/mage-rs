@@ -9,109 +9,36 @@ use crate::{
     FlatString,
 };
 
-pub fn compile_root(root: FlatRoot) -> Result<Jit, Error> {
+pub fn compile_root(root: FlatRoot) -> Result<Bytecode, Error> {
     let mut jit = MageJIT::new()?;
 
     // For now, compile the first source as the main function
     if let Some(source) = root.sources.first() {
         let function_ptr = jit.compile_source(source, &root.numbers, &root.strings)?;
-        Ok(Jit { function_ptr })
+        Ok(Bytecode(function_ptr))
     } else {
         Err(Error::JitError("No source to compile".to_string()))
     }
 }
 
-pub struct Jit {
-    function_ptr: *const u8,
-}
+#[derive(Debug, PartialEq, Clone)]
+pub struct Bytecode(*const u8);
 
-impl Jit {
-    pub fn execute(&self) -> i64 {
-        unsafe {
-            let func: fn() -> i64 = std::mem::transmute(self.function_ptr);
-            func()
-        }
-    }
-}
-
-// Manual implementation of serialization traits for Jit
-impl Clone for Jit {
-    fn clone(&self) -> Self {
-        Jit {
-            function_ptr: self.function_ptr,
-        }
-    }
-}
-
-impl PartialEq for Jit {
-    fn eq(&self, other: &Self) -> bool {
-        self.function_ptr == other.function_ptr
-    }
-}
-
-impl std::fmt::Debug for Jit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Jit")
-            .field("function_ptr", &self.function_ptr)
-            .finish()
-    }
-}
-
-impl Serialize for Jit {
+impl Serialize for Bytecode {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Jit", 1)?;
-        state.serialize_field("function_ptr", &(self.function_ptr as usize))?;
-        state.end()
+        todo!()
     }
 }
 
-impl<'de> Deserialize<'de> for Jit {
+impl<'de> Deserialize<'de> for Bytecode {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        use serde::de::{Error, MapAccess, Visitor};
-        use std::fmt;
-
-        struct JitVisitor;
-
-        impl<'de> Visitor<'de> for JitVisitor {
-            type Value = Jit;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("struct Jit")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<Jit, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut function_ptr = None;
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        "function_ptr" => {
-                            if function_ptr.is_some() {
-                                return Err(Error::duplicate_field("function_ptr"));
-                            }
-                            let ptr_value: usize = map.next_value()?;
-                            function_ptr = Some(ptr_value as *const u8);
-                        }
-                        _ => {
-                            let _: serde::de::IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-                let function_ptr =
-                    function_ptr.ok_or_else(|| Error::missing_field("function_ptr"))?;
-                Ok(Jit { function_ptr })
-            }
-        }
-
-        deserializer.deserialize_struct("Jit", &["function_ptr"], JitVisitor)
+        todo!()
     }
 }
 
@@ -139,6 +66,7 @@ impl MageJIT {
             .map_err(|e| Error::JitError(format!("Failed to create ISA: {}", e)))?;
 
         let builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
+
         let module = JITModule::new(builder);
 
         Ok(Self {

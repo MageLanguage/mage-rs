@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use tree_sitter::Language;
 
-use crate::{FlatRoot, Jit, Mage, Stage, compile_root, flatten_tree};
+use crate::{Bytecode, FlatRoot, Mage, Stage, compile_root, execute_bytecode, flatten_tree};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Type {
     Flat(FlatRoot),
-    Jit(Jit),
+    Bytecode(Bytecode),
     Execute(i64),
 }
 
@@ -29,13 +29,13 @@ impl Mage {
             return Ok(Type::Flat(root));
         }
 
-        let jit = compile_root(root)?;
+        let bytecode = compile_root(root)?;
 
         if let Stage::Compile = stage {
-            return Ok(Type::Jit(jit));
+            return Ok(Type::Bytecode(bytecode));
         }
 
-        Ok(Type::Execute(jit.execute()))
+        Ok(Type::Execute(execute_bytecode(bytecode)))
     }
 }
 
