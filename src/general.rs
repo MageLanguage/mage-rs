@@ -7,12 +7,7 @@ use crate::{FlatRoot, Jit, Mage, Stage, compile_root, flatten_tree};
 pub enum Type {
     Flat(FlatRoot),
     Jit(Jit),
-    Execute(ExecutionResult),
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct ExecutionResult {
-    pub value: i64,
+    Execute(i64),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -40,8 +35,7 @@ impl Mage {
             return Ok(Type::Jit(jit));
         }
 
-        let value = jit.execute();
-        Ok(Type::Execute(ExecutionResult { value }))
+        Ok(Type::Execute(jit.execute()))
     }
 }
 
