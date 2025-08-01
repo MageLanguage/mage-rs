@@ -10,6 +10,7 @@ pub enum Output {
 pub enum Stage {
     Flatten,
     Compile,
+    Execute,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -36,6 +37,6 @@ pub struct Run {
     /// path
     pub path: Option<String>,
     /// stage
-    #[arg(long, default_value = "flatten")]
+    #[arg(long, default_value = "execute")]
     pub stage: Stage,
 }

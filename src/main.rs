@@ -19,10 +19,10 @@ fn main() {
     match arguments.command {
         Command::Run(run) => {
             let process = |mage: &mut Mage, text: &str| match mage.process(&run.stage, text) {
-                Ok(root) => match arguments.output {
-                    Output::Text => println!("{:#?}", &root),
+                Ok(result) => match arguments.output {
+                    Output::Text => println!("{:#?}", &result),
                     Output::Json => {
-                        println!("{}", serde_json::to_string(&root).unwrap());
+                        println!("{}", serde_json::to_string(&result).unwrap());
                     }
                 },
                 Err(err) => {

@@ -499,13 +499,13 @@ pub enum FlatExpression {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatNumber(String);
+pub struct FlatNumber(pub String);
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatString(String);
+pub struct FlatString(pub String);
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatIdentifier(String);
+pub struct FlatIdentifier(pub String);
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FlatIndex {
