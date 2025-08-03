@@ -1,44 +1,36 @@
 use cranelift::prelude::*;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
+use mmap_rs::{MmapFlags, MmapMut, MmapOptions, UnsafeMmapFlags};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use zydis::{EncoderRequest, insn64};
 
 use crate::{
     Error, FlatBinary, FlatExpression, FlatIndex, FlatNumber, FlatOperator, FlatRoot, FlatSource,
     FlatString,
 };
 
-pub fn compile_root(root: FlatRoot) -> Result<Bytecode, Error> {
-    let mut jit = JIT::new()?;
+pub fn compile_root(_: FlatRoot) -> Result<Bytecode, Error> {
+    // let mut jit = JIT::new()?;
 
-    if let Some(source) = root.sources.first() {
-        let function_ptr = jit.compile_source(source, &root.numbers, &root.strings)?;
-        Ok(Bytecode(function_ptr))
-    } else {
-        Err(Error::CompileError("No source to compile".to_string()))
-    }
+    let mut code = Vec::with_capacity(256);
+    let mut add = |request: EncoderRequest| request.encode_extend(&mut code);
+
+    add(insn64!(MOV qword ptr [RDI + 0], RSP)).unwrap();
+    add(insn64!(MOV RSP, qword ptr [RSI + 0])).unwrap();
+
+    add(insn64!(MOV qword ptr [RSI + 0], RSP)).unwrap();
+    add(insn64!(MOV RSP, qword ptr [RDI + 0])).unwrap();
+
+    add(insn64!(RET)).unwrap();
+
+    Ok(Bytecode { code: code })
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Bytecode(*const u8);
-
-impl Serialize for Bytecode {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        todo!()
-    }
-}
-
-impl<'de> Deserialize<'de> for Bytecode {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        todo!()
-    }
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct Bytecode {
+    pub code: Vec<u8>,
 }
 
 struct JIT {
