@@ -7,7 +7,7 @@ use crate::{Bytecode, FlatRoot, Mage, Stage, compile_root, execute_bytecode, fla
 pub enum Type {
     Flat(FlatRoot),
     Bytecode(Bytecode),
-    Execute(i64),
+    Value(isize),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -15,7 +15,8 @@ pub enum Error {
     MageError(String),
     ParseError(String),
     FlattenError(String),
-    JitError(String),
+    CompileError(String),
+    ExecuteError(String),
 }
 
 impl Mage {
@@ -35,7 +36,7 @@ impl Mage {
             return Ok(Type::Bytecode(bytecode));
         }
 
-        Ok(Type::Execute(execute_bytecode(bytecode)))
+        Ok(Type::Value(execute_bytecode(bytecode)?))
     }
 }
 

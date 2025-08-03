@@ -10,14 +10,13 @@ use crate::{
 };
 
 pub fn compile_root(root: FlatRoot) -> Result<Bytecode, Error> {
-    let mut jit = MageJIT::new()?;
+    let mut jit = JIT::new()?;
 
-    // For now, compile the first source as the main function
     if let Some(source) = root.sources.first() {
         let function_ptr = jit.compile_source(source, &root.numbers, &root.strings)?;
         Ok(Bytecode(function_ptr))
     } else {
-        Err(Error::JitError("No source to compile".to_string()))
+        Err(Error::CompileError("No source to compile".to_string()))
     }
 }
 
@@ -25,7 +24,7 @@ pub fn compile_root(root: FlatRoot) -> Result<Bytecode, Error> {
 pub struct Bytecode(*const u8);
 
 impl Serialize for Bytecode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -34,7 +33,7 @@ impl Serialize for Bytecode {
 }
 
 impl<'de> Deserialize<'de> for Bytecode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -42,28 +41,28 @@ impl<'de> Deserialize<'de> for Bytecode {
     }
 }
 
-struct MageJIT {
+struct JIT {
     builder_context: FunctionBuilderContext,
     ctx: codegen::Context,
     module: JITModule,
 }
 
-impl MageJIT {
+impl JIT {
     fn new() -> Result<Self, Error> {
         let mut flag_builder = settings::builder();
         flag_builder
-            .set("use_colocated_libcalls", "false")
-            .map_err(|e| Error::JitError(format!("Failed to set flag: {}", e)))?;
+            .set("use_colocated_libcalls", "true")
+            .map_err(|e| Error::CompileError(format!("Failed to set flag: {}", e)))?;
         flag_builder
-            .set("is_pic", "false")
-            .map_err(|e| Error::JitError(format!("Failed to set flag: {}", e)))?;
+            .set("is_pic", "true")
+            .map_err(|e| Error::CompileError(format!("Failed to set flag: {}", e)))?;
 
         let isa_builder = cranelift_native::builder()
-            .map_err(|e| Error::JitError(format!("Host machine not supported: {}", e)))?;
+            .map_err(|e| Error::CompileError(format!("Host machine not supported: {}", e)))?;
 
         let isa = isa_builder
             .finish(settings::Flags::new(flag_builder))
-            .map_err(|e| Error::JitError(format!("Failed to create ISA: {}", e)))?;
+            .map_err(|e| Error::CompileError(format!("Failed to create ISA: {}", e)))?;
 
         let builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
 
@@ -127,16 +126,16 @@ impl MageJIT {
         let id = self
             .module
             .declare_function(function_name, Linkage::Export, &self.ctx.func.signature)
-            .map_err(|e| Error::JitError(format!("Failed to declare function: {}", e)))?;
+            .map_err(|e| Error::CompileError(format!("Failed to declare function: {}", e)))?;
 
         self.module
             .define_function(id, &mut self.ctx)
-            .map_err(|e| Error::JitError(format!("Failed to define function: {}", e)))?;
+            .map_err(|e| Error::CompileError(format!("Failed to define function: {}", e)))?;
 
         self.module.clear_context(&mut self.ctx);
         self.module
             .finalize_definitions()
-            .map_err(|e| Error::JitError(format!("Failed to finalize: {}", e)))?;
+            .map_err(|e| Error::CompileError(format!("Failed to finalize: {}", e)))?;
 
         Ok(self.module.get_finalized_function(id))
     }
@@ -169,7 +168,7 @@ impl<'a> ExpressionTranslator<'a> {
                     let var = self.get_variable(idx)?;
                     Ok(self.builder.use_var(var))
                 } else {
-                    Err(Error::JitError("Expected identifier index".to_string()))
+                    Err(Error::CompileError("Expected identifier index".to_string()))
                 }
             }
 
@@ -179,10 +178,10 @@ impl<'a> ExpressionTranslator<'a> {
             FlatExpression::Logical(binary) => self.translate_binary(binary),
             FlatExpression::Assign(binary) => self.translate_assign(binary),
 
-            FlatExpression::Member(_) => {
-                Err(Error::JitError("Member access not implemented".to_string()))
-            }
-            FlatExpression::Call(_) => Err(Error::JitError(
+            FlatExpression::Member(_) => Err(Error::CompileError(
+                "Member access not implemented".to_string(),
+            )),
+            FlatExpression::Call(_) => Err(Error::CompileError(
                 "Function calls not implemented".to_string(),
             )),
         }
@@ -248,7 +247,7 @@ impl<'a> ExpressionTranslator<'a> {
             FlatOperator::And => Ok(self.builder.ins().band(left_val, right_val)),
             FlatOperator::Or => Ok(self.builder.ins().bor(left_val, right_val)),
 
-            _ => Err(Error::JitError(format!(
+            _ => Err(Error::CompileError(format!(
                 "Operator {:?} not supported in binary expression",
                 binary.operator
             ))),
@@ -264,7 +263,7 @@ impl<'a> ExpressionTranslator<'a> {
             self.builder.def_var(var, value);
             Ok(value)
         } else {
-            Err(Error::JitError(
+            Err(Error::CompileError(
                 "Assignment left side must be an identifier".to_string(),
             ))
         }
@@ -285,10 +284,10 @@ impl<'a> ExpressionTranslator<'a> {
                 if let Some(expr) = self.source.expressions.get(*idx) {
                     self.translate_expression(expr)
                 } else {
-                    Err(Error::JitError("Invalid expression index".to_string()))
+                    Err(Error::CompileError("Invalid expression index".to_string()))
                 }
             }
-            FlatIndex::Source(_) => Err(Error::JitError(
+            FlatIndex::Source(_) => Err(Error::CompileError(
                 "Source references not supported in expressions".to_string(),
             )),
         }
@@ -299,10 +298,10 @@ impl<'a> ExpressionTranslator<'a> {
             if let Some(FlatNumber(num_str)) = self.numbers.get(*idx) {
                 self.parse_number(num_str)
             } else {
-                Err(Error::JitError("Invalid number index".to_string()))
+                Err(Error::CompileError("Invalid number index".to_string()))
             }
         } else {
-            Err(Error::JitError("Expected number index".to_string()))
+            Err(Error::CompileError("Expected number index".to_string()))
         }
     }
 
@@ -312,31 +311,31 @@ impl<'a> ExpressionTranslator<'a> {
             .or_else(|| num_str.strip_prefix("0X"))
         {
             i64::from_str_radix(hex_str, 16)
-                .map_err(|e| Error::JitError(format!("Invalid hex number: {}", e)))
+                .map_err(|e| Error::CompileError(format!("Invalid hex number: {}", e)))
         } else if let Some(bin_str) = num_str
             .strip_prefix("0b")
             .or_else(|| num_str.strip_prefix("0B"))
         {
             i64::from_str_radix(bin_str, 2)
-                .map_err(|e| Error::JitError(format!("Invalid binary number: {}", e)))
+                .map_err(|e| Error::CompileError(format!("Invalid binary number: {}", e)))
         } else if let Some(oct_str) = num_str
             .strip_prefix("0o")
             .or_else(|| num_str.strip_prefix("0O"))
         {
             i64::from_str_radix(oct_str, 8)
-                .map_err(|e| Error::JitError(format!("Invalid octal number: {}", e)))
+                .map_err(|e| Error::CompileError(format!("Invalid octal number: {}", e)))
         } else if let Some(dec_str) = num_str
             .strip_prefix("0d")
             .or_else(|| num_str.strip_prefix("0D"))
         {
             dec_str
                 .parse::<i64>()
-                .map_err(|e| Error::JitError(format!("Invalid decimal number: {}", e)))
+                .map_err(|e| Error::CompileError(format!("Invalid decimal number: {}", e)))
         } else {
             // Fallback to decimal parsing
             num_str
                 .parse::<i64>()
-                .map_err(|e| Error::JitError(format!("Invalid number: {}", e)))
+                .map_err(|e| Error::CompileError(format!("Invalid number: {}", e)))
         }
     }
 
@@ -344,6 +343,6 @@ impl<'a> ExpressionTranslator<'a> {
         self.variables
             .get(idx)
             .copied()
-            .ok_or_else(|| Error::JitError("Undefined variable".to_string()))
+            .ok_or_else(|| Error::CompileError("Undefined variable".to_string()))
     }
 }
