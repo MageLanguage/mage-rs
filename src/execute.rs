@@ -1,5 +1,5 @@
 use mmap_rs::{MmapFlags, MmapOptions, UnsafeMmapFlags};
-use std::{mem, ops::Index};
+use std::mem;
 
 use crate::{Bytecode, Error};
 
