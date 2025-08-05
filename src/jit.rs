@@ -4,13 +4,17 @@ use serde::{Deserialize, Serialize};
 use crate::{Error, FlatRoot};
 
 pub fn compile_root(_: FlatRoot) -> Result<Bytecode, Error> {
-    let mut assembler = CodeAssembler::new(64).unwrap();
+    compile().map_err(|error| Error::CompileError(format!("{}", error)))
+}
 
-    assembler.mov(rax, 60u64).unwrap();
-    assembler.mov(rdi, 40u64).unwrap();
-    assembler.syscall().unwrap();
+fn compile() -> Result<Bytecode, IcedError> {
+    let mut assembler = CodeAssembler::new(64)?;
 
-    let code = assembler.assemble(0x1234_5678).unwrap();
+    assembler.mov(rax, 60u64)?;
+    assembler.mov(rdi, 40u64)?;
+    assembler.syscall()?;
+
+    let code = assembler.assemble(0x1234_5678)?;
 
     Ok(Bytecode { code: code })
 }
