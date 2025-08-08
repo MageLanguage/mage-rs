@@ -112,7 +112,8 @@ fn flatten_node<Builder: FlatBuilder>(
         || node_kind == node_kinds.decimal
         || node_kind == node_kinds.hex
     {
-        builder.take_number(FlatNumber(node_text.to_string()))?;
+        let number = parse_number(node_text)?;
+        builder.take_number(FlatNumber(number))?;
     } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted {
         builder.take_string(FlatString(node_text.to_string()))?;
     } else if node_kind == node_kinds.identifier {
@@ -499,7 +500,7 @@ pub enum FlatExpression {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FlatNumber(pub String);
+pub struct FlatNumber(pub u64);
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlatString(pub String);
@@ -535,4 +536,46 @@ pub enum FlatOperator {
     Or,
     Constant,
     Variable,
+}
+
+fn parse_number(number_str: &str) -> Result<u64, Error> {
+    if number_str.len() < 2 {
+        return Err(Error::FlattenError(format!(
+            "Invalid number format: {}",
+            number_str
+        )));
+    }
+
+    let prefix = &number_str[0..2];
+    let digits = &number_str[2..];
+
+    if digits.is_empty() {
+        return Err(Error::FlattenError(format!(
+            "Number has no digits: {}",
+            number_str
+        )));
+    }
+
+    let value = match prefix {
+        "0b" | "0B" => u64::from_str_radix(digits, 2).map_err(|e| {
+            Error::FlattenError(format!("Invalid binary number {}: {}", number_str, e))
+        })?,
+        "0o" | "0O" => u64::from_str_radix(digits, 8).map_err(|e| {
+            Error::FlattenError(format!("Invalid octal number {}: {}", number_str, e))
+        })?,
+        "0d" | "0D" => u64::from_str_radix(digits, 10).map_err(|e| {
+            Error::FlattenError(format!("Invalid decimal number {}: {}", number_str, e))
+        })?,
+        "0x" | "0X" => u64::from_str_radix(digits, 16).map_err(|e| {
+            Error::FlattenError(format!("Invalid hex number {}: {}", number_str, e))
+        })?,
+        _ => {
+            return Err(Error::FlattenError(format!(
+                "Unknown number prefix: {}",
+                prefix
+            )));
+        }
+    };
+
+    Ok(value)
 }

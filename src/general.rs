@@ -1,13 +1,15 @@
 use serde::{Deserialize, Serialize};
 use tree_sitter::Language;
 
-use crate::{Bytecode, FlatRoot, Mage, Stage, compile_root, execute_bytecode, flatten_tree};
+use crate::{
+    Bytecode, FlatRoot, Interface, Mage, Stage, compile_root, execute_bytecode, flatten_tree,
+};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Type {
     Flat(FlatRoot),
     Bytecode(Bytecode),
-    Value(isize),
+    Value(Interface),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]

@@ -25,3 +25,4 @@ iced-x86 = { version = "1.21.0", features = [
     "mvex",
     "serde",
 ] }
+object = { version = "0.37.2", features = ["write", "unstable"] }

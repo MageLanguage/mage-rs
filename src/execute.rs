@@ -1,44 +1,83 @@
 use mmap_rs::{MmapFlags, MmapOptions, UnsafeMmapFlags};
+use serde::{Deserialize, Serialize};
 use std::mem;
 
 use crate::{Bytecode, Error};
 
+#[repr(C)]
 struct Coroutine {
     _registers: [usize; 8],
 }
 
-pub fn execute_bytecode(bytecode: Bytecode) -> Result<isize, Error> {
-    let mut executable_map = unsafe {
-        MmapOptions::new(bytecode.code.len())
+#[repr(C)]
+struct Main {
+    vector_ptr: usize,
+    vector_len: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct Interface {
+    pub interface_type: InterfaceType,
+    pub interface_data: usize,
+}
+
+#[repr(usize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum InterfaceType {
+    Void,
+    Number,
+}
+
+pub fn execute_bytecode(bytecode: Bytecode) -> Result<Interface, Error> {
+    unsafe {
+        let mut executable_map = MmapOptions::new(bytecode.code.len())
             .map_err(|error| {
                 Error::ExecuteError(format!("Failed to create memory map: {}", error))
             })?
             .with_unsafe_flags(UnsafeMmapFlags::JIT)
             .map_exec_mut()
-            .map_err(|error| Error::ExecuteError(format!("Failed to map memory: {}", error)))?
-    };
+            .map_err(|error| Error::ExecuteError(format!("Failed to map memory: {}", error)))?;
 
-    executable_map.copy_from_slice(bytecode.code.as_slice());
+        executable_map.copy_from_slice(bytecode.code.as_slice());
 
-    let call = unsafe {
-        mem::transmute::<
+        let stack_map = MmapOptions::new(64 * 1024)
+            .map_err(|error| {
+                Error::ExecuteError(format!("Failed to create memory map: {}", error))
+            })?
+            .with_flags(MmapFlags::STACK)
+            .map_mut()
+            .map_err(|error| Error::ExecuteError(format!("Failed to map memory: {}", error)))?;
+
+        let stack_end = stack_map.size() - 8;
+        let stack_ptr = stack_map.as_ptr().add(stack_end) as *mut usize;
+
+        *stack_ptr = executable_map.as_ptr().add(bytecode.main) as usize;
+
+        let old = Coroutine { _registers: [0; 8] };
+        let new = Coroutine {
+            _registers: [0, 0, 0, 0, 0, 0, 0, stack_ptr as usize],
+        };
+
+        let call = mem::transmute::<
             *const u8,
-            extern "sysv64" fn(old_coroutine: *const Coroutine, new_coroutine: *const Coroutine),
-        >(executable_map.as_ptr())
-    };
+            extern "sysv64" fn(old: &Coroutine, new: &Coroutine, main: &Main),
+        >(executable_map.as_ptr());
 
-    let stack_map = MmapOptions::new(64 * 1024)
-        .map_err(|error| Error::ExecuteError(format!("Failed to create memory map: {}", error)))?
-        .with_flags(MmapFlags::STACK)
-        .map_mut()
-        .map_err(|error| Error::ExecuteError(format!("Failed to map memory: {}", error)))?;
+        let hello = "Hello world!\n";
 
-    let old_coroutine = Coroutine { _registers: [0; 8] };
-    let new_coroutine = Coroutine {
-        _registers: [stack_map.end(), 0, 0, 0, 0, 0, 0, 0],
-    };
+        call(
+            &old,
+            &new,
+            &Main {
+                vector_ptr: hello.as_ptr() as usize,
+                vector_len: hello.len(),
+            },
+        );
 
-    call(&old_coroutine, &new_coroutine);
-
-    Ok(0)
+        Ok(Interface {
+            interface_type: InterfaceType::Void,
+            interface_data: 0,
+        })
+    }
 }
