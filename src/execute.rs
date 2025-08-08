@@ -16,8 +16,8 @@ struct Main {
 }
 
 struct Vector {
-    pointer: usize,
-    length: usize,
+    _pointer: usize,
+    _length: usize,
 }
 
 #[repr(C)]
@@ -73,8 +73,8 @@ pub fn execute_bytecode(bytecode: Bytecode) -> Result<Interface, Error> {
 
         let main = Main {
             vector: Vector {
-                pointer: hello.as_ptr() as usize,
-                length: hello.len(),
+                _pointer: hello.as_ptr() as usize,
+                _length: hello.len(),
             },
             result: Interface {
                 interface_type: InterfaceType::Void,
