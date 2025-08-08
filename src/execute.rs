@@ -11,8 +11,13 @@ struct Coroutine {
 
 #[repr(C)]
 struct Main {
-    vector_ptr: usize,
-    vector_len: usize,
+    vector: Vector,
+    result: Interface,
+}
+
+struct Vector {
+    pointer: usize,
+    length: usize,
 }
 
 #[repr(C)]
@@ -66,18 +71,19 @@ pub fn execute_bytecode(bytecode: Bytecode) -> Result<Interface, Error> {
 
         let hello = "Hello world!\n";
 
-        call(
-            &old,
-            &new,
-            &Main {
-                vector_ptr: hello.as_ptr() as usize,
-                vector_len: hello.len(),
+        let main = Main {
+            vector: Vector {
+                pointer: hello.as_ptr() as usize,
+                length: hello.len(),
             },
-        );
+            result: Interface {
+                interface_type: InterfaceType::Void,
+                interface_data: 0,
+            },
+        };
 
-        Ok(Interface {
-            interface_type: InterfaceType::Void,
-            interface_data: 0,
-        })
+        call(&old, &new, &main);
+
+        Ok(main.result)
     }
 }

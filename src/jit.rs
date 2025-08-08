@@ -73,6 +73,9 @@ impl Compiler {
         assembler.pop(rdx)?;
         assembler.pop(rsi)?;
 
+        assembler.mov(qword_ptr(rdx + 16), 1)?;
+        assembler.mov(qword_ptr(rdx + 24), rax)?;
+
         assembler.jmp(registers_exit_label)?;
 
         let result =
