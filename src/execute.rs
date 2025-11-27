@@ -10,12 +10,13 @@ struct Coroutine {
 }
 
 #[repr(C)]
-struct Main {
-    vector: Vector,
-    result: Interface,
+struct Runtime {
+    _args_ptr: usize,
+    _args_len: usize,
 }
 
-struct Vector {
+#[repr(C)]
+struct Arg {
     _pointer: usize,
     _length: usize,
 }
@@ -34,7 +35,7 @@ pub enum InterfaceType {
     Number,
 }
 
-pub fn execute_bytecode(bytecode: Bytecode) -> Result<Interface, Error> {
+pub fn execute_bytecode(bytecode: Bytecode) -> Result<(), Error> {
     unsafe {
         let mut executable_map = MmapOptions::new(bytecode.code.len())
             .map_err(|error| {
@@ -66,24 +67,23 @@ pub fn execute_bytecode(bytecode: Bytecode) -> Result<Interface, Error> {
 
         let call = mem::transmute::<
             *const u8,
-            extern "sysv64" fn(old: &Coroutine, new: &Coroutine, main: &Main),
+            extern "sysv64" fn(old: &Coroutine, new: &Coroutine, runtime: &mut Runtime),
         >(executable_map.as_ptr());
 
-        let hello = "Hello world!\n";
+        let args: Vec<String> = std::env::args().collect();
+        let args_converted: Vec<Arg> = args
+            .iter()
+            .map(|arg| Arg {
+                _pointer: arg.as_ptr() as usize,
+                _length: arg.len(),
+            })
+            .collect();
 
-        let main = Main {
-            vector: Vector {
-                _pointer: hello.as_ptr() as usize,
-                _length: hello.len(),
-            },
-            result: Interface {
-                interface_type: InterfaceType::Void,
-                interface_data: 0,
-            },
+        let mut runtime = Runtime {
+            _args_ptr: args_converted.as_ptr() as usize,
+            _args_len: args_converted.len(),
         };
 
-        call(&old, &new, &main);
-
-        Ok(main.result)
+        Ok(call(&old, &new, &mut runtime))
     }
 }
