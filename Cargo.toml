@@ -4,25 +4,25 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tree-sitter = { version = "0.25.8" }
-tree-sitter-mage = { version = "0.1.3" }
-mmap-rs = { version = "0.6.1" }
-hashbrown = { version = "0.15.4", features = ["nightly", "serde"] }
-serde = { version = "1.0.219", features = [
+tree-sitter = { version = "0.25" }
+tree-sitter-mage = { version = "0.1" }
+mmap-rs = { version = "0.7" }
+hashbrown = { version = "0.16", features = ["nightly", "serde"] }
+serde = { version = "1.0", features = [
     "alloc",
     "derive",
     "rc",
     "unstable",
 ] }
-serde_json = { version = "1.0.141" }
-clap = { version = "4.5.41", features = ["derive", "string"] }
-tower-lsp-server = { version = "0.22.0", features = ["proposed"] }
-tokio = { version = "1.46.1", features = ["full"] }
-iced-x86 = { version = "1.21.0", features = [
+serde_json = { version = "1.0" }
+clap = { version = "4.5", features = ["derive", "string"] }
+tower-lsp-server = { version = "0.22", features = ["proposed"] }
+tokio = { version = "1.48", features = ["full"] }
+iced-x86 = { version = "1.21", features = [
     "code_asm",
     "db",
     "exhaustive_enums",
     "mvex",
     "serde",
 ] }
-object = { version = "0.37.2", features = ["write", "unstable"] }
+object = { version = "0.38", features = ["write", "unstable"] }
