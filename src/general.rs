@@ -1,13 +1,17 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use tree_sitter::Language;
 
-use crate::{Bytecode, FlatRoot, Mage, Stage, compile_root, execute_bytecode, flatten_tree};
+use crate::{
+    Bytecode, ExportTable, FlatRoot, Mage, Stage, compile_root, execute_bytecode, flatten_tree,
+};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Type {
     Flat(FlatRoot),
     Bytecode(Bytecode),
-    Done,
+    Export(ExportTable),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -36,9 +40,10 @@ impl Mage {
             return Ok(Type::Bytecode(bytecode));
         }
 
-        execute_bytecode(bytecode)?;
+        let mut modules = HashMap::new();
+        let export = execute_bytecode(bytecode, self, &mut modules)?;
 
-        Ok(Type::Done)
+        Ok(Type::Export(export))
     }
 }
 

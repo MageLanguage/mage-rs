@@ -115,7 +115,7 @@ fn flatten_node<Builder: FlatBuilder>(
         let number = parse_number(node_text)?;
         builder.take_number(FlatNumber(number))?;
     } else if node_kind == node_kinds.single_quoted || node_kind == node_kinds.double_quoted {
-        builder.take_string(FlatString(node_text.to_string()))?;
+        builder.take_string(FlatString(node_text[1..node_text.len() - 1].to_string()))?;
     } else if node_kind == node_kinds.identifier {
         builder.take_identifier(FlatIdentifier(node_text.to_string()))?;
     } else if node_kind == node_kinds.extract {

@@ -35,7 +35,7 @@ pub enum Command {
 #[derive(Debug, Clone, Args)]
 pub struct Run {
     /// path
-    pub path: Option<String>,
+    pub path: Vec<String>,
     /// stage
     #[arg(long, default_value = "execute")]
     pub stage: Stage,

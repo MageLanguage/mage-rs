@@ -104,7 +104,15 @@ extern "sysv64" fn(old: &Coroutine, new: &Coroutine, runtime: &mut Runtime, expo
 - At `registers_exit`:
   - Restores callee-save registers and `rsp` from `new` (`rsi`), then `ret`.
 
-### 3.1. Per-File Stack and Entry
+### 3.1. When Coroutines Switch
+
+A full coroutine switch (stack swap) occurs only in two specific scenarios:
+1. **Rust calling Mage**: Initial entry into a top-level script.
+2. **Importing a File**: When File A executes an `import` statement for File B, the runtime pauses A, switches to B's coroutine to run B's top-level script (initialization), and then switches back to A upon completion.
+
+**Note:** Regular function calls between files do **not** trigger a coroutine switch (see Section 4.2).
+
+### 3.2. Per-File Stack and Entry
 
 To execute a file `F`:
 
@@ -125,15 +133,41 @@ Each file’s top-level script runs entirely within its own coroutine and stack 
 
 ### 4.1. Per-File Exports
 
-Every file can export variables, procedures and etc. via Mage `export` semantics.  
+Every file can export variables, procedures, and classes via the `export` operator.
 
-TODO  
+Syntax:
+```mage
+{
+    key : value;
+    func : myProcedure;
+} => export;
+```
+
+This operation populates the `ExportTable` for the current module. The keys become available to other files that import this module.
 
 ### 4.2. Absolute Cross-File Calls (No Shared Buffer)
 
-Imports must **never** cause IR or machine code to be merged into a single buffer.  
+When File A calls an exported function from File B, **no coroutine switch occurs**. File A simply executes the machine code of the function in File B using File A's current stack.
 
-TODO  
+**Mechanism:**
+1. When File B is imported, its top-level script runs (context switch).
+2. File B populates the `ExportTable` with its procedures (compiled code addresses or lazy compilation stubs).
+3. File A retrieves the procedure from the `ExportTable` and calls it directly.
+
+**Calling Convention:**
+Mage uses a custom calling convention inspired by System V AMD64 ABI:
+
+| Register | Usage |
+| :--- | :--- |
+| `rdi` | `&Coroutine old` (Context save) |
+| `rsi` | `&Coroutine new` (Context restore) |
+| `rdx` | `&mut Runtime` |
+| `rcx` | `&mut ExportTable` |
+| `r8` | **Argument Type** |
+| `r9` | **Argument Value** (Scalar `u64`/`s64` or Pointer) |
+
+Since `rdi`, `rsi`, `rdx`, and `rcx` are reserved for the runtime context, arguments are passed starting from `r8`.
+*Note: This structure implies Mage functions typically accept a single argument (which may be a pointer to a Class/Tuple containing multiple fields).*
 
 ---
 
@@ -211,16 +245,50 @@ By the time `001-hello.mg` runs, all imported files (`core.mg` and its nested im
 
 ## 7. Classes
 
-TODO
+A **Class** in Mage is a data layout schema, similar to a `struct` in Go.
+
+- **No VTable**: Classes do not carry virtual tables or methods directly.
+- **Data Layout**: It defines the memory structure of an object.
+- **Passing Mechanism**: When a variable or procedure argument is of type `Class`, it is passed as a **pointer** to the data block in memory (passed in `r9`).
+
+Example:
+```mage
+MyStruct : {
+    Field1 : Uint;
+    Field2 : String;
+} => Class;
+```
 
 ---
 
-## 8. Procedures and syscalls
+## 8. Procedures and Syscalls
 
-TODO
+### 8.1. Procedures
+
+A **Procedure** is a hybrid between a Go function and a JavaScript function.
+
+- **Structure**: A Procedure variable holds a pointer to a structure containing:
+  - Function Source Text
+  - `FlatSource` (Intermediate Representation)
+  - Optional `Compiled Code` address
+- **Lazy Compilation**: The code for a procedure is not JIT-compiled immediately upon definition. Instead, it is compiled on the **first call**, and the resulting machine code address is cached for subsequent reuse.
+- **Invocation**: Uses the calling convention described in Section 4.2.
+
+### 8.2. Syscalls
+
+Syscalls are special procedures created via the `syscall` receiver.
+
+- **Mechanism**: The `=> syscall` operator takes a definition (syscall number and argument layout) and produces a Procedure.
+- **Execution**: When this generated procedure is called, it executes the corresponding OS syscall (e.g., Linux syscalls).
+
+Example:
+```mage
+# Define a procedure 'close' that calls Linux syscall #3
+close : {3; {FD : Uint} => Class} => syscall;
+```
 
 ---
 
 ## 9. Summary
 
-TODO
+The Mage JIT relies on strict per-file isolation for initialization, using coroutines to switch contexts during the `import` phase. Once initialized, modules interact via a global `ExportTable` and standard function calls (using a custom System V-like convention), without the overhead of coroutine switching for every call. Data is structured via lightweight `Class` schemas, and behavior is encapsulated in lazily-compiled `Procedures`.

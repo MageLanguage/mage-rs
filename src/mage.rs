@@ -32,7 +32,12 @@ impl Mage {
     }
 
     pub fn parse_text(&mut self, text: &str) -> Result<Tree, Error> {
-        if let Some(tree) = self.thread.parser.parse(text, None) {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&self.language)
+            .map_err(|error| Error::MageError(format!("Unable to set language {}", error)))?;
+
+        if let Some(tree) = parser.parse(text, None) {
             Ok(tree)
         } else {
             Err(Error::ParseError("Error: Unable to parse.".to_string()))
