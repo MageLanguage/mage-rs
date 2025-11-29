@@ -14,7 +14,56 @@ It is a design document, not a full language specification, but it aims to be pr
 
 ---
 
-## 1. Design Goals
+## 1. Type System
+
+Mage is both statically and dynamically typed. Scripts run via `mage run {name}` can be compiled and executed because types of global variables (runtime, environment, etc.) are known at compile time. Procedures defined in scripts are compiled lazily on first call, at which point all required type information is available.
+
+### 1.1. Primitive Types
+
+| Type      | Description                                      |
+|-----------|--------------------------------------------------|
+| `Void`    | No value                                         |
+| `U8`      | Unsigned 8-bit integer                           |
+| `U16`     | Unsigned 16-bit integer                          |
+| `U32`     | Unsigned 32-bit integer                          |
+| `U64`     | Unsigned 64-bit integer                          |
+| `S8`      | Signed 8-bit integer                             |
+| `S16`     | Signed 16-bit integer                            |
+| `S32`     | Signed 32-bit integer                            |
+| `S64`     | Signed 64-bit integer                            |
+| `Uint`    | Unsigned integer matching target architecture    |
+| `Sint`    | Signed integer matching target architecture      |
+| `Pointer` | Pointer type (alias for `Uint`, e.g. `U64` on amd64) |
+
+### 1.2. Special Types
+
+| Type      | Description                                      |
+|-----------|--------------------------------------------------|
+| `Number`  | Static numeric literal from source code          |
+| `String`  | UTF-8 string (ptr + len)                         |
+| `Source`  | Static source block reference from source code   |
+
+These special types preserve static data from source files and enable compile-time optimizations.
+
+### 1.3. Type Inference
+
+Variable type is determined by the type of its first assigned value:
+
+```mage
+x : 0d5;           # x is Number
+y : 0d5 => U64;    # y is U64 (explicit conversion)
+z : "hello";       # z is String
+```
+
+When a specific type is needed, send the value to a type constructor via the pipe operator:
+
+```mage
+value : 0d255 => U8;
+```
+
+---
+
+## 2. Design Goals
 
 The architecture is based on the following goals and constraints:
 
@@ -82,7 +131,7 @@ The architecture is based on the following goals and constraints:
 
 ---
 
-## 2. Per-File JIT Unit
+## 3. Per-File JIT Unit
 
 ### 2.1. From source to bytecode
 
@@ -134,7 +183,7 @@ The host runtime keeps a **global module cache**:
 
 ---
 
-## 3. Coroutine-Based Execution
+## 4. Coroutine-Based Execution
 
 Each file’s JIT entry uses a fixed System V–compatible calling convention:
 
@@ -212,7 +261,7 @@ To execute a file `F`:
 
 ---
 
-## 4. Modules, Files, and Import Resolution
+## 5. Modules, Files, and Import Resolution
 
 Mage distinguishes several related concepts:
 
@@ -268,7 +317,14 @@ math : "003-import-math.mg"   => import;
 
 Each of these import strings is resolved to a file, compiled, and executed as an independent file sandbox, producing its own `ExportTable`.
 
-### 4.3. Import resolution and global module cache
+### 5.3. Import resolution and global module cache
+
+File imports are relative to the current file's directory. If `core.mg` (located at `../mage/core.mg`) imports `"core/linux.mg"`, the runtime:
+
+1. Gets the folder where `core.mg` is stored (`../mage/`)
+2. Appends the import path (`core/linux.mg`)
+3. Resolves to `../mage/core/linux.mg`
+
 
 Runtime import is implemented by a Rust helper that:
 
@@ -293,9 +349,17 @@ Runtime import is implemented by a Rust helper that:
 
 The exact normalization of module keys and search roots is an implementation choice, but the **architectural guarantee** is: for a given module key, there is at most one initialization of that file’s top-level script.
 
+**Circular imports:**
+
+- Circular imports are not currently supported and will result in an error.
+
+**Module reloading:**
+
+- Hot-swapping or reloading modules is not currently supported.
+
 ---
 
-## 5. Import / Export Model
+## 6. Import / Export Model
 
 ### 5.1. Exporting from a file
 
@@ -354,7 +418,7 @@ Calling an exported procedure from another file:
 
 ---
 
-## 6. Calling Convention and Type Descriptors
+## 7. Calling Convention and Type Descriptors
 
 Mage uses a custom calling convention inspired by System V AMD64 ABI, with an explicit type descriptor mechanism. The goal is to keep the runtime interface simple (single argument channel, single return channel) while supporting structured data via pointers.
 
@@ -440,9 +504,9 @@ Void returns:
 
 ---
 
-## 7. Classes and Data Layout
+## 8. Classes, Interfaces, and Enums
 
-### 7.1. Classes
+### 8.1. Classes
 
 A **Class** in Mage is a data layout schema, conceptually similar to a C struct:
 
@@ -476,7 +540,57 @@ MyStruct : {
 
 At runtime, `MyStruct` instances are contiguous blocks of memory with `Field1` (Uint) then `Field2` (String, itself a Class).
 
-### 7.2. Strings
+### 8.2. Interfaces
+
+An **Interface** defines a contract of required methods. Interfaces use the `method` keyword to describe procedure signatures:
+
+```mage
+Reader : {
+    read : {{reader : Reader; string : String} => Class; {read : Uint; error : ReaderError} => Class} => method;
+} => Interface;
+```
+
+The `method` keyword is a special constructor that describes procedures required for the interface. It takes a source block where:
+- First expression is the argument type
+- Second expression is the return type
+
+**Implementing an Interface:**
+
+Interface implementation must be explicit. To implement `Reader` for `File`:
+
+```mage
+newFileReader : {
+    File;
+
+    read : {
+        {file : File; string : String} => Class; {read : Uint; error : IO.ReaderError} => Class;
+        {read = {file; string} => .read} => return;
+    } => procedure;
+} => IO.Reader;
+```
+
+This creates a constructor `newFileReader` that takes a `File` and returns an `IO.Reader` implementation.
+
+### 8.3. Enums
+
+An **Enum** extends another type with named variants:
+
+```mage
+ReaderError : {
+    Uint;
+    UnsuccessfulRead;
+} => Enum;
+```
+
+This defines `ReaderError` as a `Uint` where `0` means `UnsuccessfulRead`. Enums provide semantic names for underlying numeric values.
+
+Access enum variants via member syntax:
+
+```mage
+error : ReaderError.UnsuccessfulRead;
+```
+
+### 8.4. Strings
 
 A `String` is a special Class with at least two fields:
 
@@ -495,7 +609,13 @@ Passing rules:
 - The argument type descriptor (`r8`) describes this String Class.
 - The argument value (`r9`) points to a String instance.
 
-### 7.3. Numeric literals
+Strings are currently allocated as:
+- **Constant data** for string literals in source code
+- **OS-provided data** (e.g., `environment.arguments`)
+
+String concatenation is not yet supported. Future work will add `String` to built-in types with operations like `String.from`.
+
+### 8.5. Numeric literals
 
 Numeric literals support multiple bases:
 
@@ -508,9 +628,147 @@ They are lowered to a numeric representation (`Uint` or `Sint`) as needed, respe
 
 ---
 
-## 8. Procedures and Lazy Compilation
+## 9. Control Flow
 
-### 8.1. Procedure representation
+Mage uses operator-based control flow constructs rather than keywords.
+
+### 9.1. Conditionals (if/else)
+
+The `if` operator takes a source block as its only argument:
+
+```mage
+{condition; {
+    # body executed if condition is true
+}} => if;
+```
+
+For if-else chains, add additional condition-body pairs:
+
+```mage
+{
+    condition1; {
+        # executed if condition1 is true
+    };
+    condition2; {
+        # executed if condition1 is false and condition2 is true
+    };
+    true; {
+        # else branch (always true)
+    };
+} => if;
+```
+
+### 9.2. Iteration (forRange)
+
+The `forRange` operator iterates over something iterable:
+
+```mage
+{
+    environment.arguments;  # iterable
+    argument;               # loop variable name
+    {
+        # body executed for each element
+    };
+} => forRange;
+```
+
+Example from `002-cat.mg`:
+
+```mage
+{
+    environment.arguments; argument;
+    {
+        {argument => core.File.open; writer} => core.IO.WriterTo.writeTo
+    };
+} => forRange;
+```
+
+### 9.3. Future Control Flow
+
+- `while` / `for` loops: not yet implemented
+- Pattern matching: not yet implemented
+
+---
+
+## 10. Operators and Expressions
+
+### 10.1. Assignment Operators
+
+| Operator | Name     | Description                              |
+|----------|----------|------------------------------------------|
+| `:`      | Constant | Declares a constant (cannot be reassigned) |
+| `=`      | Variable | Declares or reassigns a variable         |
+
+```mage
+PI : 0d3;        # constant, cannot be reassigned
+count = 0d0;     # variable, can be reassigned
+count = 0d1;     # OK: reassignment
+PI = 0d4;        # ERROR: cannot reassign constant
+```
+
+### 10.2. Arithmetic Operators
+
+| Operator | Description    |
+|----------|----------------|
+| `+`      | Addition       |
+| `-`      | Subtraction    |
+| `*`      | Multiplication |
+| `/`      | Division       |
+| `%`      | Modulo         |
+
+Arithmetic expressions compile directly to machine code.
+
+### 10.3. Comparison Operators
+
+| Operator | Description           |
+|----------|-----------------------|
+| `==`     | Equal                 |
+| `!=`     | Not equal             |
+| `<`      | Less than             |
+| `>`      | Greater than          |
+| `<=`     | Less than or equal    |
+| `>=`     | Greater than or equal |
+
+### 10.4. Logical Operators
+
+| Operator | Description |
+|----------|-------------|
+| `&&`     | Logical AND |
+| `\|\|`   | Logical OR  |
+
+### 10.5. Member Access Operator
+
+The `.` (extract) operator accesses members:
+
+```mage
+table.field       # access field from export table or class
+module.Procedure  # access exported procedure from module
+instance.field    # access class instance field
+```
+
+**Prefix form (`.method`):**
+
+The `.method` syntax is reserved for future use. It will mean "call the method on the implicit receiver from the argument":
+
+```mage
+{file; string} => .read   # future: call file.read with string argument
+```
+
+### 10.6. Prefix Operators
+
+Some operators allow omitting the left operand:
+
+```mage
++5    # means 0 + 5
+-5    # means 0 - 5
+.foo  # reserved for future use
+```
+
+---
+
+## 11. Procedures and Lazy Compilation
+
+### 11.1. Procedure representation
 
 A **Procedure** is a first-class callable value with lazy compilation:
 
@@ -526,7 +784,7 @@ Creation:
   - `source_index` as given,
   - `root` pointing to the file’s `FlatRoot`.
 
-### 8.2. Lazy compilation on first call
+### 11.2. Lazy compilation on first call
 
 When a procedure is invoked:
 
@@ -542,13 +800,41 @@ The compiled code is intentionally leaked to keep it alive for the lifetime of t
 
 Procedure calls follow the same calling convention as in Section 6.
 
+### 11.3. Procedure signature
+
+A procedure declaration specifies argument type, return type, and body:
+
+```mage
+add : {
+    {a : Uint; b : Uint} => Class;  # argument type
+    Uint;                            # return type
+    a + b => return;                 # body
+} => procedure;
+```
+
+- **Argument type**: A Class that describes the parameter structure. Arguments are passed as a pointer to an instance of this class.
+- **Return type**: The type of value returned by the procedure.
+- **Body**: Expressions executed when the procedure is called.
+
+The `return` operator returns a value from the procedure. Its type must match the declared return type.
+
+### 11.4. Procedure overloading
+
+Procedure overloading is **not supported**. Defining two procedures with the same name is an error:
+
+```mage
+# ERROR: duplicate procedure definition
+foo : { Uint; Uint; x => return; } => procedure;
+foo : { Sint; Sint; x => return; } => procedure;
+```
+
 ---
 
-## 9. Syscalls
+## 12. Syscalls
 
 Syscalls are special procedures created by the `syscall` operator.
 
-### 9.1. Syntax and structure
+### 12.1. Syntax and structure
 
 Syntax:
 
@@ -574,7 +860,7 @@ Here:
 - `{0d1}` constructs an instance of that Class with `code = 1`.
 - `{0d1} => exit;` passes a pointer to that instance to the syscall wrapper.
 
-### 9.2. Execution of a syscall procedure
+### 12.2. Execution of a syscall procedure
 
 At call time:
 
@@ -593,7 +879,7 @@ The current implementation targets Linux x86_64 semantics.
 
 ---
 
-## 10. Execution Order and Dependencies
+## 13. Execution Order and Dependencies
 
 The runtime enforces dependency-based ordering:
 
@@ -631,9 +917,9 @@ Multiple CLI modules:
 
 ---
 
-## 11. Environment, Variables, and Export Tables
+## 14. Environment, Variables, and Export Tables
 
-### 11.1. Variables and scopes
+### 14.1. Variables and scopes
 
 Each file execution maintains:
 
@@ -657,7 +943,28 @@ This mechanism supports:
 
 Most variables exist only within a single file’s `Runtime` and are not shared globally.
 
-### 11.2. Export tables
+### 14.2. The Environment class
+
+A special built-in class `Environment` provides access to runtime information:
+
+```mage
+Environment : {
+    arguments : Slice(String);  # CLI arguments passed to the process
+} => Class;
+```
+
+The `environment` global variable is an instance of `Environment` available to all scripts:
+
+```mage
+{
+    environment.arguments; arg;
+    {
+        # process each argument
+    };
+} => forRange;
+```
+
+### 14.3. Export tables
 
 Each file execution creates an `ExportTable` with:
 
@@ -683,7 +990,103 @@ A special exported value is **environment** (planned / architectural goal):
 
 ---
 
-## 12. Summary
+## 15. Memory Management
+
+### 15.1. Current model
+
+Memory management in the current implementation:
+
+- **Code and stack mappings**: Leaked intentionally for the lifetime of the process.
+- **Stack-allocated values**: Live until the end of the current procedure.
+- **Export table values**: Owned by the process and persist for its lifetime.
+
+### 15.2. Future work
+
+The following features are planned but not yet implemented:
+
+- **Heap allocator**: For dynamic memory allocation of Class instances and Strings.
+- **Garbage collection**: Automatic memory reclamation.
+- **RAII-style cleanup**: Deterministic resource cleanup (files, memory, etc.).
+
+---
+
+## 16. Error Handling
+
+Error handling is not yet implemented. Current status:
+
+- Errors are represented as values (e.g., `ReaderError` enum).
+- No exception-like mechanism exists.
+- Behavior on division by zero, integer overflow, or null pointer access is undefined.
+
+Future work will define a standard error handling pattern.
+
+---
+
+## 17. Platform Support
+
+### 17.1. Current target
+
+- **Linux x86_64** (amd64): Primary development target.
+
+### 17.2. Future platforms
+
+Potential future support (no timeline):
+
+- FreeBSD x86_64
+- macOS x86_64 / ARM64
+- Linux ARM64
+
+The coroutine mechanism and syscall interfaces will need platform-specific implementations.
+
+---
+
+## 18. Implementation Status
+
+This section tracks what is implemented vs. planned.
+
+### 18.1. Implemented (basic/prototype)
+
+| Feature                | Status                                      |
+|------------------------|---------------------------------------------|
+| Parsing (tree-sitter)  | Working                                     |
+| Flattening (AST)       | Working                                     |
+| JIT compilation        | Basic, syscall/export/import/procedure work |
+| Coroutine execution    | Working                                     |
+| Module imports         | Basic                                       |
+| Export tables          | Working                                     |
+| Syscalls               | Working (Linux x86_64)                      |
+| Procedures             | Basic lazy compilation                      |
+| Classes                | Skeletal                                    |
+
+### 18.2. Not yet implemented
+
+| Feature                | Notes                                       |
+|------------------------|---------------------------------------------|
+| Arithmetic operators   | Parsing works, JIT codegen needed           |
+| Comparison operators   | Parsing works, JIT codegen needed           |
+| Logical operators      | Parsing works, JIT codegen needed           |
+| Control flow (if)      | Not implemented                             |
+| Control flow (forRange)| Not implemented                             |
+| Interfaces             | Skeletal                                    |
+| Enums                  | Skeletal                                    |
+| Type checking          | Not implemented                             |
+| Heap allocation        | Not implemented                             |
+| Garbage collection     | Not implemented                             |
+| String operations      | Not implemented                             |
+| Error handling         | Not implemented                             |
+| Environment.arguments  | Partially wired                             |
+| Language server        | Skeleton exists                             |
+| Debugging / source maps| Not implemented                             |
+
+### 18.3. Development approach
+
+- Tests are added during the development process.
+- The current Rust code is a prototype to validate the architecture.
+- No formal roadmap exists; features are implemented as needed.
+
+---
+
+## 19. Summary
 
 The Mage JIT architecture is built around a few strong constraints:
 
@@ -696,3 +1099,37 @@ The Mage JIT architecture is built around a few strong constraints:
 - **Syscalls as procedures:** syscalls are defined in Mage as specialized procedures, bridging structured Mage data to OS-level syscall registers.
 
 This architecture supports core libraries (e.g. `core`, `core/IO.mg`, `core/linux.mg`) that provide higher-level abstractions like `File`, `Reader`, `Writer`, and enables example programs (like `001-hello.mg`, `002-cat.mg`, `003-import.mg`) to be implemented entirely in Mage on top of a minimal and clearly defined JIT + runtime surface.
+
+---
+
+## Appendix A: Operator Precedence
+
+From highest to lowest precedence:
+
+| Precedence | Operator(s)              | Associativity |
+|------------|--------------------------|---------------|
+| 7          | `.` (member/extract)     | Left          |
+| 6          | `*`, `/`, `%`            | Left          |
+| 5          | `+`, `-`                 | Left          |
+| 4          | `==`, `!=`, `<`, `>`, `<=`, `>=` | Left  |
+| 3          | `&&`                     | Left          |
+| 2          | `\|\|`                   | Left          |
+| 1          | `=>` (pipe/call)         | Left          |
+| 0          | `:`, `=` (assignment)    | Right         |
+
+Parentheses `()` can be used to override precedence.
+
+---
+
+## Appendix B: Reserved Syntax
+
+The following syntax is reserved for future features:
+
+| Syntax     | Intended Use                                    |
+|------------|-------------------------------------------------|
+| `.method`  | Method call on implicit receiver                |
+| `Struct`   | Value type (like Class but with copy semantics) |
+| `Union`    | Tagged union / sum type                         |
+| `while`    | While loop                                      |
+| `for`      | General for loop                                |
+| `match`    | Pattern matching                                |
