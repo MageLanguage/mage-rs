@@ -117,7 +117,7 @@ A full coroutine switch (stack swap) occurs only in two specific scenarios:
 To execute a file `F`:
 
 1. Map executable memory for `Bytecode(F).code`.
-2. Map a stack region (e.g. 64 KiB) flagged as a stack.
+2. Map a stack region (fixed **64 KiB** for now) flagged as a stack.
 3. Initialize a stack pointer such that the first `ret` will jump to `code_ptr + main`.
 4. Create:
    - `old` coroutine (zeroed)
@@ -168,6 +168,14 @@ Mage uses a custom calling convention inspired by System V AMD64 ABI:
 
 Since `rdi`, `rsi`, `rdx`, and `rcx` are reserved for the runtime context, arguments are passed starting from `r8`.
 *Note: This structure implies Mage functions typically accept a single argument (which may be a pointer to a Class/Tuple containing multiple fields).*
+
+**Return Values:**
+Return values follow a similar pattern to arguments, utilizing `rax` and `rdx` as per System V calling convention principles:
+
+| Register | Usage |
+| :--- | :--- |
+| `rax` | **Return Type** |
+| `rdx` | **Return Value** |
 
 ---
 
@@ -243,9 +251,10 @@ By the time `001-hello.mg` runs, all imported files (`core.mg` and its nested im
 
 ---
 
-## 7. Classes
+## 7. Classes and Data Types
 
-A **Class** in Mage is a data layout schema, similar to a `struct` in Go.
+### 7.1. Classes
+A **Class** in Mage is a data layout schema.
 
 - **No VTable**: Classes do not carry virtual tables or methods directly.
 - **Data Layout**: It defines the memory structure of an object.
@@ -259,6 +268,20 @@ MyStruct : {
 } => Class;
 ```
 
+### 7.2. Strings
+**String** is a specialized Class with two fields:
+1. `pointer` to data (bytes).
+2. `length` (Uint).
+
+When a function argument is a String, the Argument Type (`r8`) indicates it is a Class, and the Argument Value (`r9`) is a pointer to this two-field structure.
+
+### 7.3. Numeric Literals
+Mage supports multiple integer bases:
+- `0d` (Decimal) - e.g., `0d60`
+- `0x` (Hexadecimal)
+- `0o` (Octal)
+- `0b` (Binary)
+
 ---
 
 ## 8. Procedures and Syscalls
@@ -271,24 +294,40 @@ A **Procedure** is a hybrid between a Go function and a JavaScript function.
   - Function Source Text
   - `FlatSource` (Intermediate Representation)
   - Optional `Compiled Code` address
-- **Lazy Compilation**: The code for a procedure is not JIT-compiled immediately upon definition. Instead, it is compiled on the **first call**, and the resulting machine code address is cached for subsequent reuse.
+- **Lazy Compilation**: The code for a procedure is **not** JIT-compiled immediately upon definition. It is compiled on the **first call**, and the resulting machine code address is cached in the Procedure structure for subsequent reuse.
 - **Invocation**: Uses the calling convention described in Section 4.2.
+- **Memory**: Arguments used only in the immediate next function call (e.g., `{0d1}` in `{0d1} => syscall`) may be allocated on the stack.
 
 ### 8.2. Syscalls
 
-Syscalls are special procedures created via the `syscall` receiver.
+Syscalls are special procedures created via the `syscall` operator.
 
-- **Mechanism**: The `=> syscall` operator takes a definition (syscall number and argument layout) and produces a Procedure.
-- **Execution**: When this generated procedure is called, it executes the corresponding OS syscall (e.g., Linux syscalls).
+Syntax:
+```mage
+{ CONSTANT_NUMBER; ARGUMENT_TYPE } => syscall
+```
+
+- **Mechanism**: The `=> syscall` operator produces a specialized Procedure.
+  - `CONSTANT_NUMBER` (e.g., `0d60` for Linux exit) specifies the OS syscall number.
+  - `ARGUMENT_TYPE` (e.g., `{code : Uint} => Class`) defines the schema of the argument passed to this syscall.
+- **Execution**:
+  1. The procedure accepts arguments via standard calling convention (pointer in `r9`).
+  2. It prepares the OS-specific registers (e.g., unpacking fields from the struct pointed to by `r9` into `rdi`, `rsi`, `rdx`, etc.).
+  3. It executes the native syscall instruction.
+  4. Result is returned via `rax`/`rdx`.
 
 Example:
 ```mage
-# Define a procedure 'close' that calls Linux syscall #3
-close : {3; {FD : Uint} => Class} => syscall;
+# Define a procedure that performs Linux syscall #60 (exit)
+# The argument is a Class with a single Uint field 'code'
+exit : {0d60; {code : Uint} => Class} => syscall;
+
+# Call it
+{0d1} => exit;
 ```
 
 ---
 
 ## 9. Summary
 
-The Mage JIT relies on strict per-file isolation for initialization, using coroutines to switch contexts during the `import` phase. Once initialized, modules interact via a global `ExportTable` and standard function calls (using a custom System V-like convention), without the overhead of coroutine switching for every call. Data is structured via lightweight `Class` schemas, and behavior is encapsulated in lazily-compiled `Procedures`.
+The Mage JIT relies on strict per-file isolation for initialization, using coroutines to switch contexts during the `import` phase. Once initialized, modules interact via a global `ExportTable` and standard function calls (using a custom System V-like convention), without the overhead of coroutine switching for every call. Data is structured via lightweight `Class` schemas (including Strings), and behavior is encapsulated in lazily-compiled `Procedures`. System calls are bridged by unpacking Mage structures into OS registers based on defined schemas.

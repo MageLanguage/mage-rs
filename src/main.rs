@@ -42,7 +42,7 @@ fn main() {
                     return;
                 }
 
-                let bytecode = compile_root(root).unwrap();
+                let bytecode = compile_root(&root).unwrap();
 
                 if let Stage::Compile = run.stage {
                     let result = Type::Bytecode(bytecode);

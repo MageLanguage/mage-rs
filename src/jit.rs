@@ -1,8 +1,9 @@
-use iced_x86::{BlockEncoderOptions, IcedError, code_asm::*};
+use iced_x86::code_asm::*;
+use iced_x86::{BlockEncoderOptions, IcedError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{Error, FlatBinary, FlatExpression, FlatIndex, FlatOperator, FlatRoot, FlatSource};
+use crate::{FlatBinary, FlatExpression, FlatIndex, FlatRoot, FlatSource};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Bytecode {
@@ -13,48 +14,56 @@ pub struct Bytecode {
     pub root: FlatRoot,
 }
 
-pub fn compile_root(root: FlatRoot) -> Result<Bytecode, Error> {
-    let compiler = Compiler::new(&root);
-    let (code, registers_swap, registers_exit, main) = compiler
-        .compile()
-        .map_err(|error| Error::CompileError(format!("Failed to compile: {}", error)))?;
-
+pub fn compile_root(root: &FlatRoot) -> Result<Bytecode, crate::Error> {
+    let mut compiler = Compiler::new(root);
+    let code = compiler
+        .compile(root)
+        .map_err(|e| crate::Error::CompileError(e.to_string()))?;
     Ok(Bytecode {
         code,
-        registers_swap,
-        registers_exit,
-        main,
-        root,
+        registers_swap: compiler.registers_swap,
+        registers_exit: compiler.registers_exit,
+        main: compiler.main_offset,
+        root: root.clone(),
     })
 }
 
-pub fn compile_lazy(root: &FlatRoot, source_index: usize) -> Result<Vec<u8>, Error> {
-    let compiler = Compiler::new(root);
+pub fn compile_lazy(root: &FlatRoot, source_index: usize) -> Result<Vec<u8>, crate::Error> {
+    let mut compiler = Compiler::new(root);
     compiler
         .compile_lazy_source(source_index)
-        .map_err(|error| Error::CompileError(format!("Failed to compile lazy: {}", error)))
+        .map_err(|e| crate::Error::CompileError(e.to_string()))
 }
 
 struct Compiler<'a> {
     assembler: CodeAssembler,
     root: &'a FlatRoot,
-    // Store labels for strings to reference them
     string_labels: Vec<CodeLabel>,
-    // Store labels for identifiers to reference them
     identifier_labels: HashMap<String, CodeLabel>,
     is_function: bool,
-    exit_label: Option<CodeLabel>,
+    exit_label: CodeLabel,
+    func_epilogue_label: CodeLabel,
+    registers_swap: usize,
+    registers_exit: usize,
+    main_offset: usize,
 }
 
 impl<'a> Compiler<'a> {
     fn new(root: &'a FlatRoot) -> Self {
+        let mut assembler = CodeAssembler::new(64).unwrap();
+        let exit_label = assembler.create_label();
+        let func_epilogue_label = assembler.create_label();
         Self {
-            assembler: CodeAssembler::new(64).unwrap(),
+            assembler,
             root,
             string_labels: vec![],
             identifier_labels: HashMap::new(),
             is_function: false,
-            exit_label: None,
+            exit_label,
+            func_epilogue_label,
+            registers_swap: 0,
+            registers_exit: 0,
+            main_offset: 0,
         }
     }
 
@@ -68,164 +77,167 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn compile(mut self) -> Result<(Vec<u8>, usize, usize, usize), IcedError> {
-        // Create labels for all strings upfront
-        for _ in &self.root.strings {
+    fn compile(&mut self, root: &FlatRoot) -> Result<Vec<u8>, IcedError> {
+        // Create labels for strings
+        for _ in &root.strings {
             self.string_labels.push(self.assembler.create_label());
         }
 
-        let mut registers_swap_label = self.assembler.create_label();
-        self.exit_label = Some(registers_swap_label);
-        let mut registers_exit_label = self.assembler.create_label();
+        let mut swap_label = self.assembler.create_label();
+        let mut main_label = self.assembler.create_label();
+        let mut exit_label = self.exit_label;
 
-        // --- Context Switch Prologue ---
-        self.assembler.set_label(&mut registers_swap_label)?;
+        // 1. Swap Routine
+        // Used to switch between coroutines (Old -> New)
+        // Entry: rdi = Old (Save here), rsi = New (Restore from here)
+        self.assembler.set_label(&mut swap_label)?;
 
-        // Save Callee-saved registers to 'old' coroutine (RDI)
-        self.assembler.mov(qword_ptr(rdi + 8), rbx)?;
-        self.assembler.mov(qword_ptr(rdi + 16), rbp)?;
-        self.assembler.mov(qword_ptr(rdi + 24), r12)?;
-        self.assembler.mov(qword_ptr(rdi + 32), r13)?;
-        self.assembler.mov(qword_ptr(rdi + 40), r14)?;
-        self.assembler.mov(qword_ptr(rdi + 48), r15)?;
+        // Save Callee-Saved Registers to 'Old' (RDI)
+        // Offsets match Coroutine struct
+        self.assembler.mov(qword_ptr(rdi + 0), rbx)?;
+        self.assembler.mov(qword_ptr(rdi + 8), rbp)?;
+        self.assembler.mov(qword_ptr(rdi + 16), r12)?;
+        self.assembler.mov(qword_ptr(rdi + 24), r13)?;
+        self.assembler.mov(qword_ptr(rdi + 32), r14)?;
+        self.assembler.mov(qword_ptr(rdi + 40), r15)?;
         self.assembler.mov(qword_ptr(rdi + 56), rsp)?;
 
-        // --- Context Switch Epilogue ---
-        self.assembler.set_label(&mut registers_exit_label)?;
-
-        // Restore Callee-saved registers from 'new' coroutine (RSI)
-        self.assembler.mov(rbx, qword_ptr(rsi + 8))?;
-        self.assembler.mov(rbp, qword_ptr(rsi + 16))?;
-        self.assembler.mov(r12, qword_ptr(rsi + 24))?;
-        self.assembler.mov(r13, qword_ptr(rsi + 32))?;
-        self.assembler.mov(r14, qword_ptr(rsi + 40))?;
-        self.assembler.mov(r15, qword_ptr(rsi + 48))?;
+        // Restore Callee-Saved Registers from 'New' (RSI)
+        self.assembler.mov(rbx, qword_ptr(rsi + 0))?;
+        self.assembler.mov(rbp, qword_ptr(rsi + 8))?;
+        self.assembler.mov(r12, qword_ptr(rsi + 16))?;
+        self.assembler.mov(r13, qword_ptr(rsi + 24))?;
+        self.assembler.mov(r14, qword_ptr(rsi + 32))?;
+        self.assembler.mov(r15, qword_ptr(rsi + 40))?;
         self.assembler.mov(rsp, qword_ptr(rsi + 56))?;
 
+        // Return (to where 'New' left off)
         self.assembler.ret()?;
 
-        // --- Main Entry Point ---
-        let mut main_label = self.assembler.create_label();
+        // 2. Exit Routine (Main Script Return)
+        // Used when the main script finishes
+        self.assembler.set_label(&mut exit_label)?;
+
+        // Restore Rust context (saved in 'Old' coroutine -> r14)
+        // r14 holds the 'Old' coroutine pointer passed at entry
+        self.assembler.mov(rbx, qword_ptr(r14 + 0))?;
+        self.assembler.mov(rbp, qword_ptr(r14 + 8))?;
+        self.assembler.mov(r12, qword_ptr(r14 + 16))?;
+        self.assembler.mov(r13, qword_ptr(r14 + 24))?;
+        // r14 itself is restored last if needed, but we read from it.
+        // The return to Rust expects r15 restored too.
+        self.assembler.mov(r15, qword_ptr(r14 + 40))?;
+        self.assembler.mov(rsp, qword_ptr(r14 + 56))?;
+        self.assembler.ret()?;
+
+        // 3. Main Entry Point
+        // Called by execute.rs with (old, new, runtime, export)
+        // rdi=old, rsi=new, rdx=runtime, rcx=export
         self.assembler.set_label(&mut main_label)?;
 
-        // Incoming arguments:
-        // RDI = old coroutine
-        // RSI = new coroutine
-        // RDX = runtime
-        // RCX = export_table
+        // Initialize Runtime Registers
+        self.assembler.mov(r12, rdx)?; // Runtime
+        self.assembler.mov(r13, rcx)?; // ExportTable
+        self.assembler.mov(r14, rdi)?; // Old Coroutine (Save slot)
+        self.assembler.mov(r15, rsi)?; // New Coroutine (Self)
 
-        // Move Runtime to R12 (Callee-saved)
-        self.assembler.mov(r12, rdx)?;
-        // Move ExportTable to R13 (Callee-saved)
-        self.assembler.mov(r13, rcx)?;
-        // Save Old Coroutine to R14
-        self.assembler.mov(r14, rdi)?;
-        // Save New Coroutine to R15
-        self.assembler.mov(r15, rsi)?;
-
-        // Compile the last source (assumed to be the main file content)
-        if let Some(source) = self.root.sources.last() {
-            let source = source.clone();
-            self.compile_source(&source)?;
+        // Compile Main Script Body
+        if let Some(main_source) = root.sources.last() {
+            self.compile_source(main_source)?;
         }
 
-        // Return to Rust
-        // Prepare swap: Old -> New (current state), Restore -> Old (Rust state)
-        // RDI = New (R15)
-        // RSI = Old (R14)
-        self.assembler.mov(rdi, r15)?;
-        self.assembler.mov(rsi, r14)?;
-        self.assembler.jmp(registers_swap_label)?;
+        // Jump to Exit
+        self.emit_return()?;
 
-        // --- Data Section (Strings) ---
-        for (i, string) in self.root.strings.iter().enumerate() {
-            let label = &mut self.string_labels[i];
-            self.assembler.set_label(label)?;
+        // 4. Data Section
+        // Strings
+        for (i, string) in root.strings.iter().enumerate() {
+            self.assembler.set_label(&mut self.string_labels[i])?;
             self.assembler.db(string.0.as_bytes())?;
-            self.assembler.db(&[0])?;
+            // self.assembler.db(&[0u8])?; // Strings are ptr+len, usually don't need null term unless C interop
         }
 
-        // --- Data Section (Identifiers) ---
+        // Identifiers
         let identifiers: Vec<(String, CodeLabel)> = self
             .identifier_labels
             .iter()
             .map(|(k, v)| (k.clone(), *v))
             .collect();
 
-        for (name, _) in identifiers {
-            let label_mut = self.identifier_labels.get_mut(&name).unwrap();
-            self.assembler.set_label(label_mut)?;
+        for (name, label) in identifiers {
+            let mut l = label;
+            self.assembler.set_label(&mut l)?;
             self.assembler.db(name.as_bytes())?;
-            self.assembler.db(&[0])?;
+            self.assembler.db(&[0u8])?; // Identifiers need null term for C string usage
         }
 
         let result = self
             .assembler
             .assemble_options(0, BlockEncoderOptions::RETURN_NEW_INSTRUCTION_OFFSETS)?;
 
-        let registers_swap = result.label_ip(&registers_swap_label)?;
-        let registers_exit = result.label_ip(&registers_exit_label)?;
-        let main = result.label_ip(&main_label)?;
+        // Resolve Offsets
+        self.registers_swap = result.label_ip(&swap_label)? as usize;
+        self.registers_exit = result.label_ip(&exit_label)? as usize;
+        self.main_offset = result.label_ip(&main_label)? as usize;
 
-        Ok((
-            result.inner.code_buffer,
-            registers_swap as usize,
-            registers_exit as usize,
-            main as usize,
-        ))
+        Ok(result.inner.code_buffer)
     }
 
-    fn compile_lazy_source(mut self, source_index: usize) -> Result<Vec<u8>, IcedError> {
+    fn compile_lazy_source(&mut self, source_index: usize) -> Result<Vec<u8>, IcedError> {
         self.is_function = true;
 
-        // Create labels for all strings upfront
+        // Create labels for strings
         for _ in &self.root.strings {
             self.string_labels.push(self.assembler.create_label());
         }
 
-        // Prologue: Save Callee-Saved Registers used by JIT context
+        // Prologue
+        // Save Callee-Saved Registers
+        self.assembler.push(rbx)?;
+        self.assembler.push(rbp)?;
         self.assembler.push(r12)?;
         self.assembler.push(r13)?;
         self.assembler.push(r14)?;
         self.assembler.push(r15)?;
 
-        // Setup JIT Context from Arguments
-        // RDI (Old), RSI (New), RDX (Runtime), RCX (Export)
-        self.assembler.mov(r14, rdi)?; // Old
-        self.assembler.mov(r15, rsi)?; // New
-        self.assembler.mov(r12, rdx)?; // Runtime
-        self.assembler.mov(r13, rcx)?; // Export
+        // Initialize Runtime Registers from Arguments
+        // Standard Mage Call: rdi=Old, rsi=New, rdx=Runtime, rcx=Export
+        self.assembler.mov(r14, rdi)?;
+        self.assembler.mov(r15, rsi)?;
+        self.assembler.mov(r12, rdx)?;
+        self.assembler.mov(r13, rcx)?;
 
+        // Compile Body
         let source = &self.root.sources[source_index];
         self.compile_source(source)?;
 
-        // Epilogue: Restore Callee-Saved Registers
+        // Epilogue Label
+        self.assembler.set_label(&mut self.func_epilogue_label)?;
+
+        // Restore Callee-Saved Registers
         self.assembler.pop(r15)?;
         self.assembler.pop(r14)?;
         self.assembler.pop(r13)?;
         self.assembler.pop(r12)?;
+        self.assembler.pop(rbp)?;
+        self.assembler.pop(rbx)?;
         self.assembler.ret()?;
 
-        // --- Data Section (Strings) ---
+        // Data Section (Same as compile)
         for (i, string) in self.root.strings.iter().enumerate() {
-            let label = &mut self.string_labels[i];
-            self.assembler.set_label(label)?;
+            self.assembler.set_label(&mut self.string_labels[i])?;
             self.assembler.db(string.0.as_bytes())?;
-            self.assembler.db(&[0])?;
         }
-
-        // --- Data Section (Identifiers) ---
         let identifiers: Vec<(String, CodeLabel)> = self
             .identifier_labels
             .iter()
             .map(|(k, v)| (k.clone(), *v))
             .collect();
-
-        for (name, _) in identifiers {
-            let label_mut = self.identifier_labels.get_mut(&name).unwrap();
-            self.assembler.set_label(label_mut)?;
+        for (name, label) in identifiers {
+            let mut l = label;
+            self.assembler.set_label(&mut l)?;
             self.assembler.db(name.as_bytes())?;
-            self.assembler.db(&[0])?;
+            self.assembler.db(&[0u8])?;
         }
 
         let result = self
@@ -236,8 +248,39 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_source(&mut self, source: &FlatSource) -> Result<(), IcedError> {
-        for expression in &source.expressions {
-            self.compile_expression(source, expression)?;
+        let count = source.expressions.len();
+        let size = count * 8;
+
+        if size > 0 {
+            // Stack Allocation for Tuple
+            // Save RBX (used as tuple pointer)
+            self.assembler.push(rbx)?;
+            // Allocate space
+            self.assembler.sub(rsp, size as i32)?;
+            // Set RBX to Tuple Start
+            self.assembler.mov(rbx, rsp)?;
+
+            for (i, expression) in source.expressions.iter().enumerate() {
+                self.compile_expression(source, expression)?;
+                // Result in RAX. Store in Tuple.
+                self.assembler.mov(qword_ptr(rbx + i * 8), rax)?;
+            }
+
+            // Return Tuple Pointer in RAX
+            self.assembler.mov(rax, rbx)?;
+
+            // Restore RBX
+            // The old RBX is at [rsp + size] because we pushed it then subbed rsp.
+            self.assembler.mov(rbx, qword_ptr(rsp + size))?;
+
+            // Note: We leave 'size' bytes on the stack.
+            // This is the tuple data which acts as the return value memory.
+            // We also leave the saved RBX slot above it.
+            // The caller is responsible for stack management if needed,
+            // but in Mage linear script execution, we often just accumulate.
+        } else {
+            // Empty tuple / No expressions
+            self.assembler.xor(rax, rax)?;
         }
         Ok(())
     }
@@ -263,7 +306,6 @@ impl<'a> Compiler<'a> {
                 }
             }
             FlatExpression::Identifier(index) => {
-                // Get Variable
                 if let FlatIndex::Identifier(idx) = index {
                     let name = source.identifiers[*idx].0.clone();
                     let label = self.get_identifier_label(&name);
@@ -271,75 +313,29 @@ impl<'a> Compiler<'a> {
                     // Call get_var(runtime, name)
                     self.assembler.mov(rdi, r12)?;
                     self.assembler.lea(rsi, ptr(label))?;
-
-                    // Load func ptr from runtime offset 32 (get_var)
                     self.assembler.mov(rax, qword_ptr(r12 + 32))?;
                     self.assembler.call(rax)?;
                 }
             }
             FlatExpression::Assign(binary) => {
-                // Handle Assignment: Identifier : Expression
-                // LHS should be identifier
                 if let Some(FlatIndex::Identifier(idx)) = binary.one {
                     let name = source.identifiers[idx].0.clone();
                     let label = self.get_identifier_label(&name);
 
-                    // Compile RHS (Value)
-                    // Since compile_index might clobber volatile registers, we do it first.
-                    // The result is usually in RAX.
                     self.compile_index(source, &binary.two)?;
 
-                    // Call set_var(runtime, name, value)
                     self.assembler.mov(rdx, rax)?; // Value
                     self.assembler.mov(rdi, r12)?; // Runtime
                     self.assembler.lea(rsi, ptr(label))?; // Name
-
-                    // Load func ptr from runtime offset 24 (set_var)
                     self.assembler.mov(rax, qword_ptr(r12 + 24))?;
                     self.assembler.call(rax)?;
-                } else if let Some(FlatIndex::Expression(expr_idx)) = binary.one {
-                    if let FlatExpression::Member(member_binary) = &source.expressions[expr_idx] {
-                        // 1. Compile Object (LHS of Member)
-                        if let Some(obj_idx) = &member_binary.one {
-                            self.compile_index(source, obj_idx)?;
-                        }
-                        // Save Object to Stack
-                        self.assembler.push(rax)?;
-
-                        // 2. Compile RHS Value (of Assignment)
-                        self.compile_index(source, &binary.two)?;
-                        // Move Value to RCX (4th arg)
-                        self.assembler.mov(rcx, rax)?;
-
-                        // 3. Restore Object to RSI (2nd arg)
-                        self.assembler.pop(rsi)?;
-
-                        // 4. Get Property Name (RHS of Member)
-                        if let FlatIndex::Identifier(id_idx) = member_binary.two {
-                            let name = source.identifiers[id_idx].0.clone();
-                            let label = self.get_identifier_label(&name);
-                            // Load Name to RDX (3rd arg)
-                            self.assembler.lea(rdx, ptr(label))?;
-
-                            // 5. Setup Runtime (RDI - 1st arg)
-                            self.assembler.mov(rdi, r12)?;
-
-                            // 6. Call set_member (offset 80)
-                            self.assembler.mov(rax, qword_ptr(r12 + 80))?;
-                            self.assembler.call(rax)?;
-                        }
-                    }
                 }
+            }
+            FlatExpression::Call(binary) => {
+                self.compile_pipe(source, binary)?;
             }
             FlatExpression::Member(binary) => {
                 self.compile_member(source, binary)?;
-            }
-            FlatExpression::Call(binary) => {
-                if binary.operator == FlatOperator::Pipe {
-                    self.compile_pipe(source, binary)?;
-                } else {
-                    // TODO: Standard Call syntax
-                }
             }
             _ => {}
         }
@@ -383,32 +379,21 @@ impl<'a> Compiler<'a> {
         source: &FlatSource,
         binary: &FlatBinary,
     ) -> Result<(), IcedError> {
-        // LHS: Object (Compiled to RAX)
-        if let Some(left) = &binary.one {
-            self.compile_index(source, left)?;
+        if let Some(lhs) = &binary.one {
+            self.compile_index(source, lhs)?;
         }
-        // Save Object (RAX) to R15 (Wait, R15 is New Coroutine).
-        // Use Stack.
-        self.assembler.push(rax)?;
+        // rax = table_ptr
 
-        // RHS: Identifier (String Name)
-        if let FlatIndex::Identifier(id_idx) = binary.two {
-            let name = source.identifiers[id_idx].0.clone();
+        if let FlatIndex::Identifier(idx) = binary.two {
+            let name = source.identifiers[idx].0.clone();
             let label = self.get_identifier_label(&name);
 
-            // Call get_member(runtime, object, name)
-            // RDI = Runtime (R12)
-            // RSI = Object (Pop)
-            // RDX = Name (Label)
+            // get_member(runtime, table, name)
+            self.assembler.mov(rsi, rax)?; // table
+            self.assembler.mov(rdi, r12)?; // runtime
+            self.assembler.lea(rdx, ptr(label))?; // name
 
-            self.assembler.mov(rdx, r12)?; // Runtime (Wait, Signature?)
-            // Signature: get_member(rt, obj, name) -> RDI, RSI, RDX
-            self.assembler.mov(rdi, r12)?;
-            self.assembler.pop(rsi)?;
-            self.assembler.lea(rdx, ptr(label))?;
-
-            // Call get_member at offset 72
-            self.assembler.mov(rax, qword_ptr(r12 + 72))?;
+            self.assembler.mov(rax, qword_ptr(r12 + 72))?; // get_member offset
             self.assembler.call(rax)?;
         }
         Ok(())
@@ -512,34 +497,24 @@ impl<'a> Compiler<'a> {
             self.emit_return()?;
         } else {
             // Function Call via Pipe: Arg => Func
-            // 1. Compile Argument (LHS)
             if let Some(left) = &binary.one {
                 self.compile_index(source, left)?;
             }
-            // Result in RAX. Push it as Argument value.
             self.assembler.push(rax)?;
 
-            // 2. Compile Function (RHS)
             self.compile_index(source, &binary.two)?;
-            // Result in RAX (Procedure Pointer).
 
-            // Resolve Code Pointer from Procedure Pointer
-            // call compile_procedure(rt, proc_ptr)
             self.assembler.mov(rdi, r12)?; // Runtime
             self.assembler.mov(rsi, rax)?; // Proc Ptr
-            self.assembler.push(rax)?; // Save Proc Ptr (needed? No, we need code ptr)
+            self.assembler.push(rax)?;
 
-            // We need to save regs? No, sysv clobbers, but we are about to call result.
-            // We pushed Arg on stack. It is safe.
             self.assembler.mov(rax, qword_ptr(r12 + 96))?; // compile_procedure
             self.assembler.call(rax)?;
 
             self.assembler.mov(r11, rax)?; // Code Ptr
-            // Stack has [Arg, SavedProcPtr].
-            // Wait, I pushed rax (ProcPtr) above.
-            self.assembler.add(rsp, 8)?; // Pop SavedProcPtr (discard)
+            self.assembler.add(rsp, 8)?; // Pop SavedProcPtr
 
-            // 3. Prepare Call Arguments
+            // Prepare Call Arguments
             self.assembler.mov(rdi, r14)?; // Old
             self.assembler.mov(rsi, r15)?; // New
             self.assembler.mov(rdx, r12)?; // Runtime
@@ -547,7 +522,7 @@ impl<'a> Compiler<'a> {
             self.assembler.mov(r8, 0u64)?; // Type
             self.assembler.pop(r9)?; // Argument (Pop from stack)
 
-            // 4. Call
+            // Call
             self.assembler.call(r11)?;
         }
         Ok(())
@@ -564,12 +539,12 @@ impl<'a> Compiler<'a> {
                 let mut start_label = self.assembler.create_label();
                 let mut end_label = self.assembler.create_label();
 
-                // Jump over the trampoline
                 self.assembler.jmp(end_label)?;
                 self.assembler.set_label(&mut start_label)?;
 
-                // 1. Syscall Number (Constant)
+                // 1. Syscall Number
                 self.compile_expression(arg_source, &arg_source.expressions[0])?;
+                // Result in RAX. Syscall number goes in RAX.
 
                 // 2. Arguments
                 let args_expr = &arg_source.expressions[1];
@@ -585,26 +560,25 @@ impl<'a> Compiler<'a> {
                 }
 
                 if args_count > 1 {
-                    // Unpack from pointer in R9
-                    // Arg 1 -> RDI
                     self.assembler.mov(rdi, qword_ptr(r9))?;
-                    // Arg 2 -> RSI
                     self.assembler.mov(rsi, qword_ptr(r9 + 8))?;
-                    // Arg 3 -> RDX
                     if args_count > 2 {
                         self.assembler.mov(rdx, qword_ptr(r9 + 16))?;
                     }
                 } else {
-                    // Single arg in R9 -> RDI
-                    self.assembler.mov(rdi, r9)?;
+                    // Dereference R9 to get scalar arg
+                    self.assembler.mov(rdi, qword_ptr(r9))?;
                 }
 
                 self.assembler.syscall()?;
                 self.assembler.ret()?;
 
                 self.assembler.set_label(&mut end_label)?;
-                // Return pointer to trampoline
+
+                // Return pointer to trampoline (Code Ptr)
                 self.assembler.lea(rsi, ptr(start_label))?;
+
+                // Call make_syscall_procedure(rt, code_ptr)
                 self.assembler.mov(rdi, r12)?;
                 self.assembler.mov(rax, qword_ptr(r12 + 120))?;
                 self.assembler.call(rax)?;
@@ -618,20 +592,17 @@ impl<'a> Compiler<'a> {
         _source: &FlatSource,
         args_index: &FlatIndex,
     ) -> Result<(), IcedError> {
-        if let FlatIndex::Source(src_idx) = args_index {
-            let export_source = &self.root.sources[*src_idx];
+        if let FlatIndex::Source(idx) = args_index {
+            let export_source = &self.root.sources[*idx];
             for expr in &export_source.expressions {
-                if let FlatExpression::Assign(binary) = expr {
-                    if let Some(FlatIndex::Identifier(id_idx)) = binary.one {
-                        let name = export_source.identifiers[id_idx].0.clone();
-                        let label = self.get_identifier_label(&name);
-
-                        self.compile_index(export_source, &binary.two)?;
-
+                if let FlatExpression::Assign(bin) = expr {
+                    if let Some(FlatIndex::Identifier(id_idx)) = bin.one {
+                        let name = &export_source.identifiers[id_idx].0;
+                        self.compile_index(export_source, &bin.two)?;
+                        let label = self.get_identifier_label(name);
                         self.assembler.mov(rdx, rax)?;
                         self.assembler.mov(rdi, r12)?;
                         self.assembler.lea(rsi, ptr(label))?;
-
                         self.assembler.mov(rax, qword_ptr(r12 + 48))?;
                         self.assembler.call(rax)?;
                     }
@@ -646,10 +617,9 @@ impl<'a> Compiler<'a> {
         _source: &FlatSource,
         args_index: &FlatIndex,
     ) -> Result<(), IcedError> {
-        if let FlatIndex::Source(src_idx) = args_index {
-            // call make_procedure(rt, source_index)
+        if let FlatIndex::Source(idx) = args_index {
             self.assembler.mov(rdi, r12)?;
-            self.assembler.mov(rsi, *src_idx as u64)?;
+            self.assembler.mov(rsi, *idx as u64)?;
             self.assembler.mov(rax, qword_ptr(r12 + 88))?;
             self.assembler.call(rax)?;
         }
@@ -675,19 +645,9 @@ impl<'a> Compiler<'a> {
 
     fn emit_return(&mut self) -> Result<(), IcedError> {
         if self.is_function {
-            // Restore Callee-Saved Registers (Epilogue)
-            self.assembler.pop(r15)?;
-            self.assembler.pop(r14)?;
-            self.assembler.pop(r13)?;
-            self.assembler.pop(r12)?;
-            self.assembler.ret()?;
-        } else if let Some(label) = self.exit_label {
-            // Main script return
-            // RDI = New (R15)
-            // RSI = Old (R14)
-            self.assembler.mov(rdi, r15)?;
-            self.assembler.mov(rsi, r14)?;
-            self.assembler.jmp(label)?;
+            self.assembler.jmp(self.func_epilogue_label)?;
+        } else {
+            self.assembler.jmp(self.exit_label)?;
         }
         Ok(())
     }

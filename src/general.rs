@@ -34,7 +34,7 @@ impl Mage {
             return Ok(Type::Flat(root));
         }
 
-        let bytecode = compile_root(root)?;
+        let bytecode = compile_root(&root)?;
 
         if let Stage::Compile = stage {
             return Ok(Type::Bytecode(bytecode));
