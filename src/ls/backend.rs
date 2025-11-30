@@ -117,7 +117,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                format!("did_open: {}", params.text_document.uri.to_string()),
+                format!("did_open: {}", *params.text_document.uri),
             )
             .await;
     }
@@ -126,7 +126,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                format!("did_change: {}", params.text_document.uri.to_string()),
+                format!("did_change: {}", *params.text_document.uri),
             )
             .await;
     }
@@ -135,7 +135,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                format!("did_save: {}", params.text_document.uri.to_string()),
+                format!("did_save: {}", *params.text_document.uri),
             )
             .await;
     }
@@ -144,7 +144,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                format!("did_close: {}", params.text_document.uri.to_string()),
+                format!("did_close: {}", *params.text_document.uri),
             )
             .await;
     }
@@ -158,11 +158,10 @@ impl LanguageServer for Backend {
                 MessageType::INFO,
                 format!(
                     "goto_definition: {}",
-                    params
+                    *params
                         .text_document_position_params
                         .text_document
                         .uri
-                        .to_string()
                 ),
             )
             .await;

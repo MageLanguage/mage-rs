@@ -8,7 +8,7 @@ pub fn flatten_tree(node_kinds: &NodeKinds, tree: Tree, code: &str) -> Result<Fl
 
     flatten_node(&mut root_builder, node_kinds, tree.root_node(), code)?;
 
-    Ok(root_builder.root()?)
+    root_builder.root()
 }
 
 fn flatten_node<Builder: FlatBuilder>(
@@ -295,7 +295,7 @@ pub struct FlatSourceBuilder<'a> {
 impl<'a> FlatSourceBuilder<'a> {
     fn new(parent: &'a mut dyn FlatBuilder) -> Self {
         Self {
-            parent: parent,
+            parent,
             expressions: vec![],
             identifiers: vec![],
         }
@@ -311,7 +311,7 @@ impl<'a> FlatSourceBuilder<'a> {
 
 impl<'a> FlatBuilder for FlatSourceBuilder<'a> {
     fn send_source(&mut self, source: FlatSource) -> Result<FlatIndex, Error> {
-        Ok(self.parent.send_source(source)?)
+        self.parent.send_source(source)
     }
 
     fn send_expression(&mut self, expression: FlatExpression) -> Result<FlatIndex, Error> {
@@ -390,7 +390,7 @@ pub struct FlatBinaryBuilder<'a> {
 impl<'a> FlatBinaryBuilder<'a> {
     fn new(parent: &'a mut dyn FlatBuilder) -> Self {
         FlatBinaryBuilder {
-            parent: parent,
+            parent,
             one: None,
             two: None,
             operator: None,
@@ -401,8 +401,8 @@ impl<'a> FlatBinaryBuilder<'a> {
         if let (Some(two), Some(operator)) = (self.two, self.operator) {
             Ok(FlatBinary {
                 one: self.one,
-                two: two,
-                operator: operator,
+                two,
+                operator,
             })
         } else {
             Err(Error::FlattenError(
