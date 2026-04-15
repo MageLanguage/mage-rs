@@ -1,4 +1,4 @@
-fibonacci : (procedure {n : U64}, U64) {
+fibonacci : procedure {n : U64}, U64 {
     if n < 0d2, {
         return n;
     };

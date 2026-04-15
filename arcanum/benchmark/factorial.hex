@@ -1,4 +1,4 @@
-factorial : (procedure {n : U64}, U64) {
+factorial : procedure {n : U64}, U64 {
     if n < 0d2, {
         return 0d1;
     };
