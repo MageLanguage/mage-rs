@@ -165,17 +165,16 @@ impl<'a> Encoder<'a> {
     }
 
     fn write_arguments(&mut self, arguments: &[FlatIndex], output: &mut String) {
-        let single_call_argument = arguments.len() == 1
-            && matches!(
-                arguments.first(),
-                Some(FlatIndex::Expression(expression_index)) if matches!(self.root.get_expression(*expression_index), FlatExpression::Call(_))
-            );
+        let unwrap_single_call_argument = arguments.len() == 1
+            && matches!(arguments.first(), Some(argument) if self.should_unwrap_single_call_argument(argument));
 
         for (index, argument) in arguments.iter().enumerate() {
             if index > 0 {
-                output.push_str(self.separators.comma);
+                let previous_argument = &arguments[index - 1];
+                output.push_str(self.argument_separator(previous_argument, argument));
             }
-            if single_call_argument {
+
+            if unwrap_single_call_argument {
                 self.write_index_unwrapped(argument, output);
             } else {
                 self.write_index(argument, output);
@@ -183,9 +182,33 @@ impl<'a> Encoder<'a> {
         }
     }
 
+    fn argument_separator(
+        &self,
+        previous_argument: &FlatIndex,
+        argument: &FlatIndex,
+    ) -> &'static str {
+        if matches!(previous_argument, FlatIndex::Source(_))
+            && matches!(argument, FlatIndex::Source(_))
+        {
+            " "
+        } else {
+            self.separators.comma
+        }
+    }
+
+    fn should_unwrap_single_call_argument(&self, argument: &FlatIndex) -> bool {
+        let Some(FlatExpression::Call(call)) = self.expression_for_index(argument) else {
+            return false;
+        };
+
+        matches!(call.name, FlatIndex::Identifier(_))
+    }
+
+    // Encoder-only convenience: the decoder does not parse `foo .bar`,
+    // but the encoder may emit that form when the AST contains an
+    // implicit member represented as `Member { name: None, ... }`.
     fn try_extract_implicit_member(&self, index: &FlatIndex) -> Option<FlatIndex> {
-        if let FlatIndex::Expression(expression_index) = index
-            && let FlatExpression::Member(member) = self.root.get_expression(*expression_index)
+        if let Some(FlatExpression::Member(member)) = self.expression_for_index(index)
             && matches!(member.name, FlatIndex::None)
         {
             return Some(member.expression);
@@ -318,6 +341,21 @@ impl<'a> Encoder<'a> {
         output.push('}');
     }
 
+    fn expression_for_index(&self, index: &FlatIndex) -> Option<&FlatExpression> {
+        let FlatIndex::Expression(expression_index) = index else {
+            return None;
+        };
+
+        Some(self.root.get_expression(*expression_index))
+    }
+
+    fn should_wrap_expression(&self, expression: &FlatExpression) -> bool {
+        matches!(
+            expression,
+            FlatExpression::Call(_) | FlatExpression::Constant(_) | FlatExpression::Variable(_)
+        )
+    }
+
     fn write_index_unwrapped(&mut self, index: &FlatIndex, output: &mut String) {
         if self.write_non_expression_index(index, output) {
             return;
@@ -326,6 +364,7 @@ impl<'a> Encoder<'a> {
         let FlatIndex::Expression(expression_index) = index else {
             return;
         };
+
         let expression = self.root.get_expression(*expression_index);
         self.write_expression(expression, output);
     }
@@ -338,17 +377,15 @@ impl<'a> Encoder<'a> {
         let FlatIndex::Expression(expression_index) = index else {
             return;
         };
+
         let expression = self.root.get_expression(*expression_index);
-        let needs_wrap = matches!(
-            expression,
-            FlatExpression::Call(_) | FlatExpression::Constant(_) | FlatExpression::Variable(_)
-        );
-        if needs_wrap {
+
+        if self.should_wrap_expression(expression) {
             output.push('(');
-        }
-        self.write_expression(expression, output);
-        if needs_wrap {
+            self.write_expression(expression, output);
             output.push(')');
+        } else {
+            self.write_expression(expression, output);
         }
     }
 }

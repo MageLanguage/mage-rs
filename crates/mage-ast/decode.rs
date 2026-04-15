@@ -934,17 +934,14 @@ impl<'a> Decoder<'a> {
         min_binding_power: u8,
     ) -> Result<FlatIndex, DecodeError> {
         loop {
-            let saved = self.save();
             self.skip_whitespace();
 
             let Some((kind, left_binding_power, right_binding_power)) = self.peek_binary_operator()
             else {
-                self.restore(saved);
                 break;
             };
 
             if left_binding_power < min_binding_power {
-                self.restore(saved);
                 break;
             }
 
@@ -975,20 +972,22 @@ impl<'a> Decoder<'a> {
         self.parse_call_with_atom(atom, atom_offset)
     }
 
+    fn can_be_callee(&self, index: &FlatIndex) -> bool {
+        matches!(index, FlatIndex::Identifier(_) | FlatIndex::Expression(_))
+    }
+
     fn parse_call_with_atom(
         &mut self,
         atom: FlatIndex,
         atom_offset: u32,
     ) -> Result<FlatIndex, DecodeError> {
-        if !matches!(&atom, FlatIndex::Identifier(_) | FlatIndex::Expression(_)) {
+        if !self.can_be_callee(&atom) {
             return Ok(atom);
         }
 
-        let saved = self.save();
         self.skip_whitespace();
 
         if !self.can_start_atom() {
-            self.restore(saved);
             return Ok(atom);
         }
 
@@ -998,6 +997,11 @@ impl<'a> Decoder<'a> {
 
         while self.consume(b',') {
             self.skip_whitespace();
+            arguments.push(self.parse_expression()?);
+            self.skip_whitespace();
+        }
+
+        while self.can_start_atom() {
             arguments.push(self.parse_expression()?);
             self.skip_whitespace();
         }
@@ -1023,7 +1027,7 @@ impl<'a> Decoder<'a> {
             let inner = self.parse_statement()?;
             self.skip_whitespace();
             self.expect_closing(b')', open_offset)?;
-            return Ok(inner);
+            return self.parse_member_chain(inner);
         }
 
         if self.check(b'{') {

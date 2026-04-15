@@ -36,10 +36,30 @@ fn source_indices(root: &FlatRoot, source_index: usize) -> &[FlatIndex] {
     root.get_extra_indices(source.start, source.end)
 }
 
+fn first_statement(root: &FlatRoot) -> FlatIndex {
+    let statements = source_indices(root, 0);
+    assert_eq!(statements.len(), 1);
+    statements[0]
+}
+
 fn get_expression<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a FlatExpression {
     match index {
         FlatIndex::Expression(expression_index) => root.get_expression(*expression_index),
         other => panic!("expected Expression index, got {other:?}"),
+    }
+}
+
+fn expect_identifier<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a str {
+    match index {
+        FlatIndex::Identifier(string_index) => root.get_string(*string_index),
+        other => panic!("expected identifier, got {other:?}"),
+    }
+}
+
+fn expect_number<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a str {
+    match index {
+        FlatIndex::Number(string_index) => root.get_string(*string_index),
+        other => panic!("expected number, got {other:?}"),
     }
 }
 
@@ -73,70 +93,40 @@ fn semicolons_only() {
 #[test]
 fn single_identifier() {
     let (root, _) = decode("foo");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    assert!(matches!(statements[0], FlatIndex::Identifier(_)));
-    assert_eq!(
-        root.get_string(match statements[0] {
-            FlatIndex::Identifier(i) => i,
-            _ => unreachable!(),
-        }),
-        "foo"
-    );
+    assert_eq!(expect_identifier(&root, &first_statement(&root)), "foo");
 }
 
 #[test]
 fn unicode_identifier() {
     let (root, _) = decode("привет");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    assert!(matches!(statements[0], FlatIndex::Identifier(_)));
+    assert_eq!(expect_identifier(&root, &first_statement(&root)), "привет");
 }
 
 #[test]
 fn underscore_identifier() {
     let (root, _) = decode("_foo_bar");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    if let FlatIndex::Identifier(index) = statements[0] {
-        assert_eq!(root.get_string(index), "_foo_bar");
-    } else {
-        panic!("expected identifier");
-    }
+    assert_eq!(
+        expect_identifier(&root, &first_statement(&root)),
+        "_foo_bar"
+    );
 }
 
 #[test]
 fn zero_literal() {
     let (root, _) = decode("0");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    if let FlatIndex::Number(index) = statements[0] {
-        assert_eq!(root.get_string(index), "0");
-    } else {
-        panic!("expected number, got {:?}", statements[0]);
-    }
+    assert_eq!(expect_number(&root, &first_statement(&root)), "0");
 }
 
 #[test]
 fn binary_number() {
     let (root, _) = decode("0b1010");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    if let FlatIndex::Number(index) = statements[0] {
-        assert_eq!(root.get_string(index), "0b1010");
-    } else {
-        panic!("expected number");
-    }
+    assert_eq!(expect_number(&root, &first_statement(&root)), "0b1010");
 }
 
 #[test]
 fn octal_number() {
     let (root, _) = decode("0o777");
-    if let FlatIndex::Number(index) = source_indices(&root, 0)[0] {
-        assert_eq!(root.get_string(index), "0o777");
-    } else {
-        panic!("expected number");
-    }
+    assert_eq!(expect_number(&root, &first_statement(&root)), "0o777");
 }
 
 #[test]
@@ -375,7 +365,7 @@ fn grouped_callee_followed_by_source_block_decodes_as_call() {
 
     let FlatExpression::Call(inner_call) = get_expression(&root, &outer_call.name) else {
         panic!(
-            "expected inner Call as grouped callee, got {:?}",
+            "expected inner Call as grouped/composite callee, got {:?}",
             get_expression(&root, &outer_call.name)
         );
     };
@@ -830,9 +820,6 @@ fn call_with_binary_expression_argument() {
 
 #[test]
 fn parenthesized_call_in_binary_operation() {
-    // Member chaining only applies after identifiers, so (foo bar).baz
-    // does not work. Test that parenthesized calls compose with binary
-    // operators instead.
     let (root, _) = decode("(foo bar) + x");
     let statements = source_indices(&root, 0);
     if let FlatExpression::BinaryOperation(operation) = get_expression(&root, &statements[0]) {
@@ -844,6 +831,160 @@ fn parenthesized_call_in_binary_operation() {
     } else {
         panic!("expected BinaryOperation");
     }
+}
+
+#[test]
+fn grouped_call_followed_by_member_access() {
+    let (root, _) = decode("(foo bar).baz");
+    let statements = source_indices(&root, 0);
+    assert_eq!(statements.len(), 1);
+
+    let FlatExpression::Member(member) = get_expression(&root, &statements[0]) else {
+        panic!(
+            "expected Member, got {:?}",
+            get_expression(&root, &statements[0])
+        );
+    };
+
+    assert!(matches!(member.expression, FlatIndex::Identifier(_)));
+    if let FlatExpression::Call(call) = get_expression(&root, &member.name) {
+        assert!(matches!(call.name, FlatIndex::Identifier(_)));
+        let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
+        assert_eq!(arguments.len(), 1);
+        assert!(matches!(arguments[0], FlatIndex::Identifier(_)));
+    } else {
+        panic!("expected Call as member base");
+    }
+}
+
+#[test]
+fn grouped_call_member_followed_by_call() {
+    let (root, _) = decode("(foo bar).baz qux");
+    let statements = source_indices(&root, 0);
+    assert_eq!(statements.len(), 1);
+
+    let FlatExpression::Call(outer_call) = get_expression(&root, &statements[0]) else {
+        panic!(
+            "expected outer Call, got {:?}",
+            get_expression(&root, &statements[0])
+        );
+    };
+
+    let outer_arguments =
+        root.get_extra_indices(outer_call.arguments_start, outer_call.arguments_end);
+    assert_eq!(outer_arguments.len(), 1);
+    assert!(matches!(outer_arguments[0], FlatIndex::Identifier(_)));
+
+    let FlatExpression::Member(member) = get_expression(&root, &outer_call.name) else {
+        panic!(
+            "expected Member as outer callee, got {:?}",
+            get_expression(&root, &outer_call.name)
+        );
+    };
+
+    assert!(matches!(member.expression, FlatIndex::Identifier(_)));
+    assert!(matches!(
+        get_expression(&root, &member.name),
+        FlatExpression::Call(_)
+    ));
+}
+
+#[test]
+fn hello_example_grouped_member_call_decodes() {
+    let (root, _) = decode(r#"(core.getStdoutWriter void).write "Hello world!""#);
+    let statements = source_indices(&root, 0);
+    assert_eq!(statements.len(), 1);
+
+    let FlatExpression::Call(write_call) = get_expression(&root, &statements[0]) else {
+        panic!(
+            "expected outer Call, got {:?}",
+            get_expression(&root, &statements[0])
+        );
+    };
+
+    let write_arguments =
+        root.get_extra_indices(write_call.arguments_start, write_call.arguments_end);
+    assert_eq!(write_arguments.len(), 1);
+    assert!(matches!(write_arguments[0], FlatIndex::String(_)));
+
+    let FlatExpression::Member(write_member) = get_expression(&root, &write_call.name) else {
+        panic!(
+            "expected Member as outer callee, got {:?}",
+            get_expression(&root, &write_call.name)
+        );
+    };
+
+    assert!(matches!(write_member.expression, FlatIndex::Identifier(_)));
+
+    let FlatExpression::Call(get_writer_call) = get_expression(&root, &write_member.name) else {
+        panic!(
+            "expected Call as member base, got {:?}",
+            get_expression(&root, &write_member.name)
+        );
+    };
+
+    let get_writer_arguments = root.get_extra_indices(
+        get_writer_call.arguments_start,
+        get_writer_call.arguments_end,
+    );
+    assert_eq!(get_writer_arguments.len(), 1);
+    assert!(matches!(get_writer_arguments[0], FlatIndex::Identifier(_)));
+}
+
+#[test]
+fn continued_call_application_after_comma_separated_arguments() {
+    let (root, _) =
+        decode("for environment.arguments, {argument : String} { writer.write argument; }");
+    let statements = source_indices(&root, 0);
+    assert_eq!(statements.len(), 1);
+
+    let FlatExpression::Call(call) = get_expression(&root, &statements[0]) else {
+        panic!(
+            "expected Call, got {:?}",
+            get_expression(&root, &statements[0])
+        );
+    };
+
+    let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
+    assert_eq!(arguments.len(), 3);
+    assert!(matches!(arguments[0], FlatIndex::Expression(_)));
+    assert!(matches!(arguments[1], FlatIndex::Source(_)));
+    assert!(matches!(arguments[2], FlatIndex::Source(_)));
+}
+
+#[test]
+fn cat_example_for_shape_decodes() {
+    let (root, _) = decode(
+        r#"label : for environment.arguments, {argument : String} {
+    if argument == "exit", {
+        break label;
+    };
+
+    writer.write (core.File.read argument);
+}"#,
+    );
+    let statements = source_indices(&root, 0);
+    assert_eq!(statements.len(), 1);
+
+    let FlatExpression::Constant(assign) = get_expression(&root, &statements[0]) else {
+        panic!(
+            "expected Constant, got {:?}",
+            get_expression(&root, &statements[0])
+        );
+    };
+
+    let FlatExpression::Call(call) = get_expression(&root, &assign.expression) else {
+        panic!(
+            "expected Call as constant value, got {:?}",
+            get_expression(&root, &assign.expression)
+        );
+    };
+
+    let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
+    assert_eq!(arguments.len(), 3);
+    assert!(matches!(arguments[0], FlatIndex::Expression(_)));
+    assert!(matches!(arguments[1], FlatIndex::Source(_)));
+    assert!(matches!(arguments[2], FlatIndex::Source(_)));
 }
 
 #[test]

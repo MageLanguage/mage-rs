@@ -51,7 +51,7 @@ impl Builder {
         (start, end)
     }
 
-    fn set_source_0(&mut self, statements: &[FlatIndex]) {
+    fn set_root_source(&mut self, statements: &[FlatIndex]) {
         let (start, end) = self.push_indices(statements);
         self.root.sources[0] = FlatSource { start, end };
     }
@@ -239,6 +239,100 @@ fn pretty_grouped_callee_with_source_block_argument() {
 }
 
 #[test]
+fn simple_grouped_call_member_access() {
+    assert_eq!(decode_encode_simple("(foo bar).baz"), "(foo bar).baz");
+}
+
+#[test]
+fn pretty_grouped_call_member_access() {
+    assert_eq!(decode_encode_pretty("(foo bar).baz"), "(foo bar).baz;");
+}
+
+#[test]
+fn simple_grouped_member_call() {
+    assert_eq!(
+        decode_encode_simple("(foo bar).baz qux"),
+        "(foo bar).baz qux"
+    );
+}
+
+#[test]
+fn pretty_grouped_member_call() {
+    assert_eq!(
+        decode_encode_pretty("(foo bar).baz qux"),
+        "(foo bar).baz qux;"
+    );
+}
+
+#[test]
+fn simple_hello_example_grouped_member_call() {
+    assert_eq!(
+        decode_encode_simple(r#"(core.getStdoutWriter void).write "Hello world!""#),
+        r#"(core.getStdoutWriter void).write "Hello world!""#
+    );
+}
+
+#[test]
+fn pretty_hello_example_grouped_member_call() {
+    assert_eq!(
+        decode_encode_pretty(r#"(core.getStdoutWriter void).write "Hello world!""#),
+        r#"(core.getStdoutWriter void).write "Hello world!";"#
+    );
+}
+
+#[test]
+fn simple_continued_call_application_after_comma_list() {
+    assert_eq!(
+        decode_encode_simple(
+            "for environment.arguments, {argument : String} { writer.write argument; }"
+        ),
+        "for environment.arguments,{argument:String} {writer.write argument}"
+    );
+}
+
+#[test]
+fn pretty_continued_call_application_after_comma_list() {
+    assert_eq!(
+        decode_encode_pretty(
+            "for environment.arguments, {argument : String} { writer.write argument; }"
+        ),
+        "for environment.arguments, {\n\targument : String;\n} {\n\twriter.write argument;\n};"
+    );
+}
+
+#[test]
+fn simple_cat_example_continued_call_application_shape() {
+    assert_eq!(
+        decode_encode_simple(
+            r#"label : for environment.arguments, {argument : String} {
+    if argument == "exit", {
+        break label;
+    };
+
+    writer.write (core.File.read argument);
+}"#,
+        ),
+        r#"label:for environment.arguments,{argument:String} {if argument=="exit",{break label};writer.write (core.File.read argument)}"#
+    );
+}
+
+#[test]
+fn pretty_cat_example_continued_call_application_shape() {
+    assert_eq!(
+        decode_encode_pretty(
+            r#"label : for environment.arguments, {argument : String} {
+    if argument == "exit", {
+        break label;
+    };
+
+    writer.write (core.File.read argument);
+}"#,
+        ),
+        "label : for environment.arguments, {\n\targument : String;\n} {\n\tif argument == \"exit\", {\n\t\tbreak label;\n\t};\n\twriter.write (core.File.read argument);\n};"
+    );
+}
+
+#[test]
 fn precedence_no_parens_needed() {
     assert_eq!(decode_encode_simple("a + b * c"), "a+b*c");
 }
@@ -319,7 +413,7 @@ fn implicit_member_encoding() {
         arguments_start: args_start,
         arguments_end: args_end,
     }));
-    b.set_source_0(&[call_expr]);
+    b.set_root_source(&[call_expr]);
 
     assert_eq!(b.encode_simple(), "foo .field");
     assert_eq!(b.encode_pretty(), "foo .field;");
@@ -336,7 +430,7 @@ fn builder_empty_source() {
 fn builder_single_identifier() {
     let mut b = Builder::new();
     let index = b.add_string("hello");
-    b.set_source_0(&[FlatIndex::Identifier(index)]);
+    b.set_root_source(&[FlatIndex::Identifier(index)]);
     assert_eq!(b.encode_simple(), "hello");
     assert_eq!(b.encode_pretty(), "hello;");
 }
@@ -345,7 +439,7 @@ fn builder_single_identifier() {
 fn builder_single_number() {
     let mut b = Builder::new();
     let index = b.add_string("0xFF");
-    b.set_source_0(&[FlatIndex::Number(index)]);
+    b.set_root_source(&[FlatIndex::Number(index)]);
     assert_eq!(b.encode_simple(), "0xFF");
 }
 
@@ -353,7 +447,7 @@ fn builder_single_number() {
 fn builder_single_string() {
     let mut b = Builder::new();
     let index = b.add_string(r#""hi""#);
-    b.set_source_0(&[FlatIndex::String(index)]);
+    b.set_root_source(&[FlatIndex::String(index)]);
     assert_eq!(b.encode_simple(), r#""hi""#);
 }
 
@@ -366,7 +460,7 @@ fn builder_constant() {
         name: FlatIndex::Identifier(name),
         expression: FlatIndex::Number(val),
     }));
-    b.set_source_0(&[expression]);
+    b.set_root_source(&[expression]);
     assert_eq!(b.encode_simple(), "x:0");
     assert_eq!(b.encode_pretty(), "x : 0;");
 }
@@ -380,7 +474,7 @@ fn builder_variable() {
         name: FlatIndex::Identifier(name),
         expression: FlatIndex::Number(val),
     }));
-    b.set_source_0(&[expression]);
+    b.set_root_source(&[expression]);
     assert_eq!(b.encode_simple(), "x=0");
     assert_eq!(b.encode_pretty(), "x = 0;");
 }
@@ -397,7 +491,7 @@ fn builder_multiple_variable() {
         names_end: ne,
         expression: FlatIndex::Identifier(val),
     }));
-    b.set_source_0(&[expression]);
+    b.set_root_source(&[expression]);
     assert_eq!(b.encode_simple(), "a,b=x");
     assert_eq!(b.encode_pretty(), "a, b = x;");
 }
@@ -411,7 +505,7 @@ fn builder_member() {
         name: FlatIndex::Identifier(obj),
         expression: FlatIndex::Identifier(field),
     }));
-    b.set_source_0(&[expression]);
+    b.set_root_source(&[expression]);
     assert_eq!(b.encode_simple(), "obj.field");
 }
 
@@ -425,7 +519,7 @@ fn builder_binary_operation() {
         left: FlatIndex::Identifier(a),
         right: FlatIndex::Identifier(b_name),
     }));
-    b.set_source_0(&[expression]);
+    b.set_root_source(&[expression]);
     assert_eq!(b.encode_simple(), "a+b");
     assert_eq!(b.encode_pretty(), "a + b;");
 }
@@ -440,7 +534,7 @@ fn builder_call_no_args() {
         arguments_start: s,
         arguments_end: e,
     }));
-    b.set_source_0(&[expression]);
+    b.set_root_source(&[expression]);
     assert_eq!(b.encode_simple(), "foo");
 }
 
@@ -456,7 +550,7 @@ fn builder_call_with_args() {
         arguments_start: s,
         arguments_end: e,
     }));
-    b.set_source_0(&[expression]);
+    b.set_root_source(&[expression]);
     assert_eq!(b.encode_simple(), "foo bar,baz");
     assert_eq!(b.encode_pretty(), "foo bar, baz;");
 }
@@ -477,7 +571,7 @@ fn builder_nested_binary_precedence() {
         left: addition,
         right: FlatIndex::Identifier(c_name),
     }));
-    b.set_source_0(&[multiply]);
+    b.set_root_source(&[multiply]);
     assert_eq!(b.encode_simple(), "(a+b)*c");
     assert_eq!(b.encode_pretty(), "(a + b) * c;");
 }
@@ -498,7 +592,7 @@ fn builder_nested_binary_no_parens_needed() {
         left: FlatIndex::Identifier(a),
         right: multiply,
     }));
-    b.set_source_0(&[addition]);
+    b.set_root_source(&[addition]);
     assert_eq!(b.encode_simple(), "a+b*c");
 }
 
@@ -518,7 +612,7 @@ fn builder_right_associativity_parens() {
         left: FlatIndex::Identifier(a),
         right: inner,
     }));
-    b.set_source_0(&[outer]);
+    b.set_root_source(&[outer]);
     assert_eq!(b.encode_simple(), "a-(b-c)");
 }
 
@@ -538,7 +632,7 @@ fn builder_left_associativity_no_parens() {
         left: inner,
         right: FlatIndex::Identifier(c_name),
     }));
-    b.set_source_0(&[outer]);
+    b.set_root_source(&[outer]);
     assert_eq!(b.encode_simple(), "a-b-c");
 }
 
@@ -554,7 +648,7 @@ fn builder_empty_block() {
         arguments_start: as_,
         arguments_end: ae,
     }));
-    b.set_source_0(&[call]);
+    b.set_root_source(&[call]);
     assert_eq!(b.encode_simple(), "foo {}");
 }
 
@@ -572,7 +666,7 @@ fn builder_block_with_content() {
         arguments_start: as_,
         arguments_end: ae,
     }));
-    b.set_source_0(&[call]);
+    b.set_root_source(&[call]);
     assert_eq!(b.encode_simple(), "foo {a;b}");
     assert_eq!(b.encode_pretty(), "foo {\n\ta;\n\tb;\n};");
 }
@@ -583,7 +677,7 @@ fn builder_multiple_statements_simple() {
     let a = b.add_string("a");
     let b_name = b.add_string("b");
     let c_name = b.add_string("c");
-    b.set_source_0(&[
+    b.set_root_source(&[
         FlatIndex::Identifier(a),
         FlatIndex::Identifier(b_name),
         FlatIndex::Identifier(c_name),
@@ -606,8 +700,9 @@ fn encode_simple() {
 
 #[test]
 fn single_call_argument_unwrapped() {
-    // When a call's only argument is itself a call, the argument is
-    // written without wrapping parens so `foo bar baz` round-trips.
+    // When a call's only argument is itself a call with an identifier
+    // callee, the argument is written without wrapping parens so
+    // left-associative call chaining like `foo bar baz` round-trips.
     let (root, _) = crate::decode("foo bar baz").unwrap();
     assert_eq!(Encoder::encode(&root, Format::Simple), "foo bar baz");
 }
@@ -655,6 +750,6 @@ fn all_binary_operators_simple_no_spacing() {
 #[test]
 fn none_index_produces_no_output() {
     let mut b = Builder::new();
-    b.set_source_0(&[FlatIndex::None]);
+    b.set_root_source(&[FlatIndex::None]);
     assert_eq!(b.encode_simple(), "");
 }
