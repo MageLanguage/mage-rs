@@ -1,0 +1,10 @@
+[package]
+name = "serde_text"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "text.rs"
+
+[dependencies]
+serde_text_derive = { path = "../serde_text_derive" }

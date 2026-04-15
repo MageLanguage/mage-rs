@@ -1,0 +1,16 @@
+[package]
+name = "mage-compiler"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "compiler.rs"
+
+[dependencies]
+mage-ast = { path = "../mage-ast" }
+mage-contract = { path = "../mage-contract" }
+mage-memory = { version = "0.1.0", path = "../mage-memory" }
+serde = { version = "1.0", features = ["std", "derive"] }
+
+[dev-dependencies]
+serde_json = { version = "1.0" }

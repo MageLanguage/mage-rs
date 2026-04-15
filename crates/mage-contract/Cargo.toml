@@ -1,0 +1,14 @@
+[package]
+name = "mage-contract"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "contract.rs"
+
+[dependencies]
+blake3 = "1.8"
+memchr = "2.7"
+serde = { version = "1.0", features = ["std", "derive"] }
+serde_json = { version = "1.0" }
+serde_text = { path = "../serde_text" }

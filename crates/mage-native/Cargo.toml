@@ -1,0 +1,17 @@
+[package]
+name = "mage-native"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "native.rs"
+
+[dependencies]
+mage-contract = { path = "../mage-contract" }
+mmap-rs = { version = "0.7" }
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+serde_json = { version = "1.0" }

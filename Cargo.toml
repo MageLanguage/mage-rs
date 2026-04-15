@@ -1,28 +1,12 @@
-[package]
-name = "mage-rs"
+[workspace]
+resolver = "2"
+members = ["crates/mage", "crates/mage-ast", "crates/mage-compiler", "crates/mage-contract", "crates/mage-loader", "crates/mage-native", "crates/mage-da", "crates/mage-ls", "crates/mage-memory", "crates/serde_text", "crates/serde_text_derive"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-tree-sitter = { version = "0.25" }
-tree-sitter-mage = { version = "0.1" }
-mmap-rs = { version = "0.7" }
-hashbrown = { version = "0.16", features = ["nightly", "serde"] }
-serde = { version = "1.0", features = [
-    "alloc",
-    "derive",
-    "rc",
-    "unstable",
-] }
-serde_json = { version = "1.0" }
-clap = { version = "4.5", features = ["derive", "string"] }
-tower-lsp-server = { version = "0.22", features = ["proposed"] }
-tokio = { version = "1.48", features = ["full"] }
-iced-x86 = { version = "1.21", features = [
-    "code_asm",
-    "db",
-    "exhaustive_enums",
-    "mvex",
-    "serde",
-] }
-object = { version = "0.38", features = ["write", "unstable"] }
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

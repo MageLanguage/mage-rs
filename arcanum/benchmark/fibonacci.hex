@@ -1,0 +1,14 @@
+fibonacci : (procedure {n : U64}, U64) {
+    if n < 0d2, {
+        return n;
+    };
+
+    return (fibonacci n - 0d1) + (fibonacci n - 0d2);
+};
+
+i = 0d0;
+
+while i < 0d10, {
+    fibonacci 0d30;
+    i = i + 0d1;
+};

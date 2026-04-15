@@ -1,0 +1,32 @@
+ReaderError : Enumeration U64, {
+    None : 0d0;
+    UnsuccessfulRead : 0d1;
+};
+
+Reader : Interface {
+    read : method {reader : Reader; string : String}, {read : U64; error : ReaderError};
+};
+
+
+WriterError : Enumeration U64, {
+    None : 0d0;
+    UnsuccessfulWrite : 0d1;
+};
+
+Writer : Interface {
+    write : method {writer : Writer; string : String}, {wrote : U64; error : WriterError};
+};
+
+
+WriterTo : Interface {
+    writeTo : method {writerTo : WriterTo; writer : Writer}, {error : WriterError};
+};
+
+
+export {
+    ReaderError : ReaderError;
+    Reader      : Reader;
+    WriterError : WriterError;
+    Writer      : Writer;
+    WriterTo    : WriterTo;
+};

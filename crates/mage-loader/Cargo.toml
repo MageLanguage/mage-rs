@@ -1,0 +1,11 @@
+[package]
+name = "mage-loader"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "loader.rs"
+
+[dependencies]
+mage-contract = { path = "../mage-contract" }
+serde = { version = "1.0", features = ["std", "derive"] }

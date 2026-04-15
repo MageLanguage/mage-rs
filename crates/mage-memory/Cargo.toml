@@ -1,0 +1,9 @@
+[package]
+name = "mage-memory"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+[lib]
+path = "memory.rs"

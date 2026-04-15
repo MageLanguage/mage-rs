@@ -1,0 +1,14 @@
+factorial : (procedure {n : U64}, U64) {
+    if n < 0d2, {
+        return 0d1;
+    };
+
+    return n * (factorial n - 0d1);
+};
+
+i = 0d0;
+
+while i < 0d10, {
+    factorial 0d20;
+    i = i + 0d1;
+};

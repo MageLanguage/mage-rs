@@ -1,0 +1,12 @@
+read   : syscall 0d0,   {FD : U64; vector_pointer : Pointer; vector_length : U64};
+write  : syscall 0d1,   {FD : U64; vector_pointer : Pointer; vector_length : U64};
+close  : syscall 0d3,   {FD : U64};
+openat : syscall 0d257, {dirFD : U64; path_pointer : Pointer; flags : U64; mode : U64};
+
+
+export {
+    read   : read;
+    write  : write;
+    openat : openat;
+    close  : close;
+};

@@ -1,0 +1,4 @@
+{
+  "name": "mage",
+  "workspaces": ["crates/mage-contract"]
+}

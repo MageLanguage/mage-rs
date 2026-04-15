@@ -1,0 +1,89 @@
+types:
+  Binary:
+    - target: [u64, offset]
+      left: [u64, offset]
+      right: [u64, offset]
+    - target: [u64, offset]
+      left: [u64, offset]
+      right: [u64, immutable]
+instructions:
+  None:
+  Exit:
+    data:
+      - code: [u64, immutable]
+      - code: [u64, offset]
+  Take:
+    data:
+      - stack_size: [u64, immutable]
+  Free:
+    data:
+      - stack_size: [u64, immutable]
+  Load:
+    data:
+      - target: [u64, offset]
+        source: [u64, offset]
+      - target: [u64, offset]
+        source: [u64, immutable]
+  Add:
+    type: Binary
+  Subtract:
+    type: Binary
+  Multiply:
+    type: Binary
+  Divide:
+    type: Binary
+  Modulo:
+    type: Binary
+  LessThan:
+    type: Binary
+  GreaterThan:
+    type: Binary
+  LessThanOrEqual:
+    type: Binary
+  GreaterThanOrEqual:
+    type: Binary
+  Equal:
+    type: Binary
+  NotEqual:
+    type: Binary
+  Jump:
+    data:
+      - to: [u64, immutable]
+      - to: [u64, offset]
+  JumpIfNot:
+    data:
+      - condition: [u64, offset]
+        to: [u64, immutable]
+  JumpIf:
+    data:
+      - condition: [u64, offset]
+        to: [u64, immutable]
+superinstructions:
+  - [TakeStackSizeImmutable, JumpToImmutable]
+  - [FreeStackSizeImmutable, JumpToImmutable]
+  - [LessThanTargetOffsetLeftOffsetRightOffset, JumpIfNotConditionOffsetToImmutable]
+  - [LessThanTargetOffsetLeftOffsetRightImmutable, JumpIfNotConditionOffsetToImmutable]
+  - [GreaterThanTargetOffsetLeftOffsetRightOffset, JumpIfNotConditionOffsetToImmutable]
+  - [GreaterThanTargetOffsetLeftOffsetRightImmutable, JumpIfNotConditionOffsetToImmutable]
+  - [LessThanOrEqualTargetOffsetLeftOffsetRightOffset, JumpIfNotConditionOffsetToImmutable]
+  - [LessThanOrEqualTargetOffsetLeftOffsetRightImmutable, JumpIfNotConditionOffsetToImmutable]
+  - [GreaterThanOrEqualTargetOffsetLeftOffsetRightOffset, JumpIfNotConditionOffsetToImmutable]
+  - [GreaterThanOrEqualTargetOffsetLeftOffsetRightImmutable, JumpIfNotConditionOffsetToImmutable]
+  - [EqualTargetOffsetLeftOffsetRightOffset, JumpIfNotConditionOffsetToImmutable]
+  - [EqualTargetOffsetLeftOffsetRightImmutable, JumpIfNotConditionOffsetToImmutable]
+  - [NotEqualTargetOffsetLeftOffsetRightOffset, JumpIfNotConditionOffsetToImmutable]
+  - [NotEqualTargetOffsetLeftOffsetRightImmutable, JumpIfNotConditionOffsetToImmutable]
+  - [LessThanTargetOffsetLeftOffsetRightOffset, JumpIfConditionOffsetToImmutable]
+  - [LessThanTargetOffsetLeftOffsetRightImmutable, JumpIfConditionOffsetToImmutable]
+  - [GreaterThanTargetOffsetLeftOffsetRightOffset, JumpIfConditionOffsetToImmutable]
+  - [GreaterThanTargetOffsetLeftOffsetRightImmutable, JumpIfConditionOffsetToImmutable]
+  - [LessThanOrEqualTargetOffsetLeftOffsetRightOffset, JumpIfConditionOffsetToImmutable]
+  - [LessThanOrEqualTargetOffsetLeftOffsetRightImmutable, JumpIfConditionOffsetToImmutable]
+  - [GreaterThanOrEqualTargetOffsetLeftOffsetRightOffset, JumpIfConditionOffsetToImmutable]
+  - [GreaterThanOrEqualTargetOffsetLeftOffsetRightImmutable, JumpIfConditionOffsetToImmutable]
+  - [EqualTargetOffsetLeftOffsetRightOffset, JumpIfConditionOffsetToImmutable]
+  - [EqualTargetOffsetLeftOffsetRightImmutable, JumpIfConditionOffsetToImmutable]
+  - [NotEqualTargetOffsetLeftOffsetRightOffset, JumpIfConditionOffsetToImmutable]
+  - [NotEqualTargetOffsetLeftOffsetRightImmutable, JumpIfConditionOffsetToImmutable]
+  - [FreeStackSizeImmutable, JumpToOffset]
+  - [TakeStackSizeImmutable, JumpToOffset]

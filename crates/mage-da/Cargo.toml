@@ -1,0 +1,17 @@
+[package]
+name = "mage-da"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mage-da"
+path = "da.rs"
+
+[dependencies]
+serde = { version = "1.0", features = [
+    "alloc",
+    "derive",
+    "rc",
+    "unstable",
+] }
+serde_json = { version = "1.0" }

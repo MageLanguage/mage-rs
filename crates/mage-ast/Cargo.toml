@@ -1,0 +1,18 @@
+[package]
+name = "mage-ast"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "ast.rs"
+
+[dependencies]
+mage-contract = { path = "../mage-contract" }
+memchr = "2.7"
+rustc-hash = "2.1"
+serde = { version = "1.0", features = ["std", "derive"] }
+serde_text = { path = "../serde_text" }
+unicode-ident = "1.0"
+
+[dev-dependencies]
+serde_json = { version = "1.0" }

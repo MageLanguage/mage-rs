@@ -1,0 +1,10 @@
+{
+  "name": "mage-contract",
+  "type": "module",
+  "dependencies": {
+    "ejs": "^4.0.1"
+  },
+  "scripts": {
+    "build": "bun build.js"
+  }
+}

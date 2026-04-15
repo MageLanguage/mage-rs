@@ -1,0 +1,18 @@
+IO    : import "core/IO.hex";
+linux : import "core/linux.hex";
+
+OS : linux;
+
+export {
+    IO              : IO;
+    linux           : linux;
+    File            : OS.File;
+    File.open       : OS.File.open;
+    File.openat     : OS.File.openAt;
+    File.close      : OS.File.close;
+    File.read       : OS.File.read;
+    File.write      : OS.File.write;
+    getStdinReader  : OS.getStdinReader;
+    getStdoutWriter : OS.getStdoutWriter;
+    getStderrWriter : OS.getStderrWriter;
+};

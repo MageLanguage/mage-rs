@@ -1,0 +1,80 @@
+IO      : import "IO.hex";
+syscall : import "linux/syscall.hex";
+
+
+File : Class {
+    FD : U64;
+};
+
+
+File.openAt : (procedure {directoryFD : U64; path : String; flags : U64; mode : U64}, File) {
+    FD = syscall.openat directoryFD, path.pointer, flags, mode;
+    return File FD;
+};
+
+File.open : (procedure {path : String; flags : U64; mode : U64}, File) {
+    FD = syscall.openat 0d4294967196, path, flags, mode;
+    return File FD;
+};
+
+File.close : (procedure {file : File}, Void) {
+     syscall.close file.FD;
+};
+
+File.read : (procedure {file : File; string : String}, U64) {
+    return syscall.read file.FD, string.pointer, string.length;
+};
+
+File.write : (procedure {file : File; string : String}, U64) {
+    return syscall.write file.FD, string.pointer, string.length;
+};
+
+
+newFileReader : implement File, IO.Reader, {
+    read : (procedure {file : File; string : String}, {read : U64; error : IO.ReaderError}) {
+        return (File.read file, string), IO.ReaderError.None;
+    };
+};
+
+newFileWriter : implement File, IO.Writer, {
+    write : (procedure {file : File; string : String}, {wrote : U64; error : IO.WriterError}) {
+        return (File.write file, string), IO.WriterError.None;
+    };
+};
+
+newFileWriterTo : implement File, IO.WriterTo, {
+    writeTo : (procedure {writerTo : File; writer : IO.Writer}, {error : IO.WriterError}) {
+        return IO.WriterError.UnsuccessfulWrite;
+    };
+};
+
+
+stdin  : File 0d0;
+stdout : File 0d1;
+stderr : File 0d2;
+
+
+getStdinReader : (procedure Void, IO.Reader) {
+    return newFileReader stdin;
+};
+
+getStdoutWriter : (procedure Void, IO.Writer) {
+    return newFileWriter stdout;
+};
+
+getStderrWriter : (procedure Void, IO.Writer) {
+    return newFileWriter stderr;
+};
+
+
+export {
+    File            : File;
+    File.open       : File.open;
+    File.openAt     : File.openat;
+    File.close      : File.close;
+    File.read       : File.read;
+    File.write      : File.write;
+    getStdinReader  : getStdinReader;
+    getStdoutWriter : getStdoutWriter;
+    getStderrWriter : getStderrWriter;
+};

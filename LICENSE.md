@@ -6,7 +6,7 @@ FSL-1.1-MIT
 
 ## Notice
 
-Copyright 2025 Alexander Kosachev
+Copyright 2025 Aleksandr Kosachev
 
 ## Terms and Conditions
 

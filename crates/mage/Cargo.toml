@@ -1,0 +1,22 @@
+[package]
+name = "mage"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "cast"
+path = "cast.rs"
+
+[lib]
+path = "mage.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["std", "derive"] }
+serde_json = { version = "1.0" }
+mage-ast = { path = "../mage-ast" }
+mage-compiler = { path = "../mage-compiler" }
+mage-contract = { path = "../mage-contract" }
+mage-loader = { path = "../mage-loader" }
+serde_text = { path = "../serde_text" }
+mage-native = { path = "../mage-native" }
