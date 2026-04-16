@@ -38,38 +38,63 @@ impl<'a> Compiler<'a> {
         offset
     }
 
-    pub(crate) fn emit_jump_if_not(&mut self, condition: u64, to: u64) -> usize {
-        if let Some(comparison) = self.last_comparison.take()
-            && comparison.target == condition
-            && comparison.opcode_offset + COMPARISON_INSTRUCTION_SIZE == self.bytecode_offset()
-        {
-            self.patch_map.push_superinstruction(
-                comparison.opcode_offset as u32,
-                comparison.jump_if_not_kind,
-            );
+    fn emit_conditional_jump(
+        &mut self,
+        condition: u64,
+        instruction: Instruction,
+        superinstruction_kind: Option<SuperinstructionKind>,
+    ) -> usize {
+        if let Some(superinstruction_kind) = superinstruction_kind {
+            self.patch_comparison_superinstruction(condition, superinstruction_kind);
         }
-        let offset = self.emit(&Instruction::JumpIfNotConditionOffsetToImmutable(
-            JumpIfNotConditionOffsetToImmutable { condition, to },
-        ));
+        let offset = self.emit(&instruction);
         self.patch_map
             .push_relocation((offset + FIELD_2_OFFSET) as u32);
         offset
     }
 
-    pub(crate) fn emit_jump_if(&mut self, condition: u64, to: u64) -> usize {
+    fn patch_comparison_superinstruction(
+        &mut self,
+        condition: u64,
+        superinstruction_kind: SuperinstructionKind,
+    ) {
         if let Some(comparison) = self.last_comparison.take()
             && comparison.target == condition
             && comparison.opcode_offset + COMPARISON_INSTRUCTION_SIZE == self.bytecode_offset()
         {
             self.patch_map
-                .push_superinstruction(comparison.opcode_offset as u32, comparison.jump_if_kind);
+                .push_superinstruction(comparison.opcode_offset as u32, superinstruction_kind);
         }
-        let offset = self.emit(&Instruction::JumpIfConditionOffsetToImmutable(
-            JumpIfConditionOffsetToImmutable { condition, to },
-        ));
-        self.patch_map
-            .push_relocation((offset + FIELD_2_OFFSET) as u32);
-        offset
+    }
+
+    pub(crate) fn emit_jump_if_not(&mut self, condition: u64, to: u64) -> usize {
+        let superinstruction_kind = self
+            .last_comparison
+            .as_ref()
+            .map(|comparison| comparison.jump_if_not_kind);
+        self.emit_conditional_jump(
+            condition,
+            Instruction::JumpIfNotConditionOffsetToImmutable(JumpIfNotConditionOffsetToImmutable {
+                condition,
+                to,
+            }),
+            superinstruction_kind,
+        )
+    }
+
+    pub(crate) fn emit_jump_if(&mut self, condition: u64, to: u64) -> usize {
+        let superinstruction_kind = self
+            .last_comparison
+            .as_ref()
+            .map(|comparison| comparison.jump_if_kind);
+        self.emit_conditional_jump(
+            condition,
+            Instruction::JumpIfConditionOffsetToImmutable(JumpIfConditionOffsetToImmutable {
+                condition,
+                to,
+            }),
+            superinstruction_kind,
+        )
     }
 
     pub(crate) fn emit_jump_to_label(&mut self, label: FixupLabel) {

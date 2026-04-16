@@ -2,9 +2,13 @@ use mage_contract::{Instruction, Reader, SuperinstructionKind};
 
 use crate::{Bytecode, CompileError, Compiler, PatchMap, SourceMap};
 
-fn compile(code: &str) -> (Bytecode, SourceMap, PatchMap) {
+fn compile_result(code: &str) -> (Bytecode, SourceMap, PatchMap, Vec<CompileError>) {
     let (root, locations) = mage_ast::decode(code).unwrap();
-    let (bytecode, source_map, patch_map, errors) = Compiler::compile_recovering(&root, &locations);
+    Compiler::compile_recovering(&root, &locations)
+}
+
+fn compile(code: &str) -> (Bytecode, SourceMap, PatchMap) {
+    let (bytecode, source_map, patch_map, errors) = compile_result(code);
     if let Some(error) = errors.into_iter().next() {
         panic!("compilation failed for {code:?}: {error}");
     }
@@ -12,8 +16,7 @@ fn compile(code: &str) -> (Bytecode, SourceMap, PatchMap) {
 }
 
 fn try_compile(code: &str) -> Result<(Bytecode, SourceMap, PatchMap), CompileError> {
-    let (root, locations) = mage_ast::decode(code).unwrap();
-    let (bytecode, source_map, patch_map, errors) = Compiler::compile_recovering(&root, &locations);
+    let (bytecode, source_map, patch_map, errors) = compile_result(code);
     if let Some(error) = errors.into_iter().next() {
         Err(error)
     } else {
@@ -22,8 +25,7 @@ fn try_compile(code: &str) -> Result<(Bytecode, SourceMap, PatchMap), CompileErr
 }
 
 fn compile_recovering(code: &str) -> (Bytecode, SourceMap, PatchMap, Vec<CompileError>) {
-    let (root, locations) = mage_ast::decode(code).unwrap();
-    Compiler::compile_recovering(&root, &locations)
+    compile_result(code)
 }
 
 fn decode_instructions(bytecode: &Bytecode) -> Vec<Instruction> {
@@ -42,36 +44,45 @@ fn has<F: Fn(&Instruction) -> bool>(instructions: &[Instruction], pred: F) -> bo
 }
 
 fn count<F: Fn(&Instruction) -> bool>(instructions: &[Instruction], pred: F) -> usize {
-    instructions.iter().filter(|i| pred(i)).count()
+    instructions
+        .iter()
+        .filter(|instruction| pred(instruction))
+        .count()
 }
 
-fn is_take(i: &Instruction) -> bool {
-    matches!(i, Instruction::TakeStackSizeImmutable(_))
+fn is_take(instruction: &Instruction) -> bool {
+    matches!(instruction, Instruction::TakeStackSizeImmutable(_))
 }
 
-fn is_free(i: &Instruction) -> bool {
-    matches!(i, Instruction::FreeStackSizeImmutable(_))
+fn is_free(instruction: &Instruction) -> bool {
+    matches!(instruction, Instruction::FreeStackSizeImmutable(_))
 }
 
-fn is_jump(i: &Instruction) -> bool {
-    matches!(i, Instruction::JumpToImmutable(_))
+fn is_jump(instruction: &Instruction) -> bool {
+    matches!(instruction, Instruction::JumpToImmutable(_))
 }
 
-fn is_jump_if_not(i: &Instruction) -> bool {
-    matches!(i, Instruction::JumpIfNotConditionOffsetToImmutable(_))
-}
-
-fn is_jump_if(i: &Instruction) -> bool {
-    matches!(i, Instruction::JumpIfConditionOffsetToImmutable(_))
-}
-
-fn is_load_immutable(i: &Instruction) -> bool {
-    matches!(i, Instruction::LoadTargetOffsetSourceImmutable(_))
-}
-
-fn is_exit(i: &Instruction) -> bool {
+fn is_jump_if_not(instruction: &Instruction) -> bool {
     matches!(
-        i,
+        instruction,
+        Instruction::JumpIfNotConditionOffsetToImmutable(_)
+    )
+}
+
+fn is_jump_if(instruction: &Instruction) -> bool {
+    matches!(
+        instruction,
+        Instruction::JumpIfConditionOffsetToImmutable(_)
+    )
+}
+
+fn is_load_immutable(instruction: &Instruction) -> bool {
+    matches!(instruction, Instruction::LoadTargetOffsetSourceImmutable(_))
+}
+
+fn is_exit(instruction: &Instruction) -> bool {
+    matches!(
+        instruction,
         Instruction::ExitCodeImmutable(_) | Instruction::ExitCodeOffset(_)
     )
 }

@@ -19,7 +19,7 @@ struct CursorState {
 }
 
 #[derive(Clone, Copy)]
-struct StringTableState {
+struct ParseStateSnapshot {
     strings_len: usize,
     buffer_len: usize,
     expressions_len: usize,
@@ -167,7 +167,7 @@ impl<'a> Decoder<'a> {
     }
 
     #[inline]
-    fn check(&self, byte: u8) -> bool {
+    fn check_byte(&self, byte: u8) -> bool {
         self.cursor.peek_byte() == Some(byte)
     }
 
@@ -213,7 +213,7 @@ impl<'a> Decoder<'a> {
 
     #[inline]
     fn is_single_equals_assignment(&self) -> bool {
-        self.check(b'=') && !matches!(self.peek_next_byte(), Some(b'=') | Some(b'>'))
+        self.check_byte(b'=') && !matches!(self.peek_next_byte(), Some(b'=') | Some(b'>'))
     }
 
     fn expect_closing(&mut self, byte: u8, open_offset: usize) -> Result<(), DecodeError> {
@@ -230,6 +230,12 @@ impl<'a> Decoder<'a> {
                 opening,
             ))
         }
+    }
+
+    fn consume_unexpected_closing_delimiter(&mut self, delimiter: char) {
+        let error = DecodeError::unexpected_closing_delimiter(self.offset(), delimiter);
+        self.errors.push(error);
+        self.cursor.offset += 1;
     }
 
     fn skip_to_sync_point(&mut self) {
@@ -390,8 +396,8 @@ impl<'a> Decoder<'a> {
         index
     }
 
-    fn save_string_table(&self) -> StringTableState {
-        StringTableState {
+    fn save_parse_state(&self) -> ParseStateSnapshot {
+        ParseStateSnapshot {
             strings_len: self.root.strings.len(),
             buffer_len: self.root.buffer.len(),
             expressions_len: self.root.expressions.len(),
@@ -406,7 +412,7 @@ impl<'a> Decoder<'a> {
     ///
     /// The `interned` keys borrow from `self.cursor.code`, not `self.root.buffer`,
     /// so reading discarded string contents before truncating the buffer is safe.
-    fn restore_string_table(&mut self, state: StringTableState) {
+    fn restore_parse_state(&mut self, state: ParseStateSnapshot) {
         for string_index in state.strings_len..self.root.strings.len() {
             let string = &self.root.strings[string_index];
             let key: &str = &self.root.buffer[string.start as usize..string.end as usize];
@@ -529,7 +535,7 @@ impl<'a> Decoder<'a> {
             self.advance_byte();
             self.advance_byte();
             radix
-        } else if self.check(b'0') {
+        } else if self.check_byte(b'0') {
             self.advance_byte();
             return Ok(self.push_string(start, self.cursor.offset));
         } else {
@@ -566,34 +572,36 @@ impl<'a> Decoder<'a> {
         Ok(self.push_string(start, self.cursor.offset))
     }
 
-    fn has_identifier_continuation(&self) -> bool {
+    fn identifier_continuation_length(&self) -> usize {
         match self.cursor.code.as_bytes().get(self.cursor.offset) {
-            Some(&byte) if byte < 0x80 => Self::is_ascii_identifier_continue(byte),
+            Some(&byte) if byte < 0x80 => {
+                if Self::is_ascii_identifier_continue(byte) {
+                    1
+                } else {
+                    0
+                }
+            }
             Some(_) => self
                 .cursor
                 .peek_char()
-                .is_some_and(Self::is_identifier_char),
-            None => false,
+                .filter(|character| Self::is_identifier_char(*character))
+                .map_or(0, char::len_utf8),
+            None => 0,
         }
     }
 
+    fn has_identifier_continuation(&self) -> bool {
+        self.identifier_continuation_length() != 0
+    }
+
     fn consume_identifier_continuation(&mut self) {
-        self.cursor.offset += self.cursor.peek_char().map_or(0, |c| c.len_utf8());
+        self.cursor.offset += self.identifier_continuation_length();
         while self.cursor.offset < self.cursor.code.len() {
-            let byte = self.cursor.code.as_bytes()[self.cursor.offset];
-            if byte < 0x80 {
-                if !Self::is_ascii_identifier_continue(byte) {
-                    break;
-                }
-                self.cursor.offset += 1;
-            } else {
-                match self.cursor.peek_char() {
-                    Some(character) if Self::is_identifier_char(character) => {
-                        self.cursor.offset += character.len_utf8();
-                    }
-                    _ => break,
-                }
+            let continuation_length = self.identifier_continuation_length();
+            if continuation_length == 0 {
+                break;
             }
+            self.cursor.offset += continuation_length;
         }
     }
 
@@ -725,15 +733,11 @@ impl<'a> Decoder<'a> {
                     continue;
                 }
                 Some(b')') => {
-                    let error = DecodeError::unexpected_closing_delimiter(self.offset(), ')');
-                    self.errors.push(error);
-                    self.cursor.offset += 1;
+                    self.consume_unexpected_closing_delimiter(')');
                     continue;
                 }
                 Some(b'}') => {
-                    let error = DecodeError::unexpected_closing_delimiter(self.offset(), '}');
-                    self.errors.push(error);
-                    self.cursor.offset += 1;
+                    self.consume_unexpected_closing_delimiter('}');
                     continue;
                 }
                 _ => {}
@@ -769,9 +773,7 @@ impl<'a> Decoder<'a> {
                     continue;
                 }
                 Some(b')') => {
-                    let error = DecodeError::unexpected_closing_delimiter(self.offset(), ')');
-                    self.errors.push(error);
-                    self.cursor.offset += 1;
+                    self.consume_unexpected_closing_delimiter(')');
                     continue;
                 }
                 _ => {}
@@ -783,7 +785,7 @@ impl<'a> Decoder<'a> {
 
             self.skip_whitespace();
 
-            if !self.at_end() && !self.check(b'}') && !self.consume(b';') {
+            if !self.at_end() && !self.check_byte(b'}') && !self.consume(b';') {
                 let error = DecodeError::expected_character(self.offset(), ';');
                 self.errors.push(error);
             }
@@ -841,12 +843,12 @@ impl<'a> Decoder<'a> {
         first_name: FlatIndex,
         identifier_start: usize,
     ) -> Result<Option<FlatIndex>, DecodeError> {
-        if !self.check(b',') {
+        if !self.check_byte(b',') {
             return Ok(None);
         }
 
         let multi_saved = self.save();
-        let string_table_saved = self.save_string_table();
+        let parse_state_saved = self.save_parse_state();
         let mut names = vec![first_name];
         let mut valid = true;
 
@@ -879,7 +881,7 @@ impl<'a> Decoder<'a> {
         }
 
         self.restore(multi_saved);
-        self.restore_string_table(string_table_saved);
+        self.restore_parse_state(parse_state_saved);
         Ok(None)
     }
 
@@ -1025,7 +1027,7 @@ impl<'a> Decoder<'a> {
     fn parse_atom(&mut self) -> Result<FlatIndex, DecodeError> {
         self.skip_whitespace();
 
-        if self.check(b'(') {
+        if self.check_byte(b'(') {
             let open_offset = self.cursor.offset;
             self.advance_byte();
             self.skip_whitespace();
@@ -1035,7 +1037,7 @@ impl<'a> Decoder<'a> {
             return self.parse_member_chain(inner);
         }
 
-        if self.check(b'{') {
+        if self.check_byte(b'{') {
             let open_offset = self.cursor.offset;
             self.advance_byte();
             let (source_indices, source_locations) = self.parse_source();
@@ -1044,12 +1046,12 @@ impl<'a> Decoder<'a> {
             return Ok(FlatIndex::Source(source_index));
         }
 
-        if self.check(b'"') {
+        if self.check_byte(b'"') {
             let string_index = self.parse_string_literal()?;
             return Ok(FlatIndex::String(string_index));
         }
 
-        if self.number_radix().is_some() || self.check(b'0') {
+        if self.number_radix().is_some() || self.check_byte(b'0') {
             let number_index = self.parse_number_literal()?;
             return Ok(FlatIndex::Number(number_index));
         }

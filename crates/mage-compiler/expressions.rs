@@ -202,15 +202,38 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    pub(crate) fn emit_binary_immutable(
+    fn record_binary_result(
+        &mut self,
+        offset: usize,
+        target: u64,
+        operation: FlatBinaryOperationKind,
+        right_is_immutable: bool,
+    ) {
+        // Only comparisons can fuse with a following jump; for arithmetic
+        // operations `emit()` already cleared `last_comparison`.
+        if let (Some(jump_if_not_kind), Some(jump_if_kind)) = (
+            comparison_jump_if_not_kind(operation, right_is_immutable),
+            comparison_jump_if_kind(operation, right_is_immutable),
+        ) {
+            self.last_comparison = Some(LastComparison {
+                opcode_offset: offset,
+                target,
+                jump_if_not_kind,
+                jump_if_kind,
+            });
+        }
+        self.last_result_target = Some((offset + FIELD_1_OFFSET, target));
+    }
+
+    fn emit_binary_immutable_instruction(
         &mut self,
         target: u64,
         left: u64,
         right: u64,
         operation: FlatBinaryOperationKind,
-    ) {
+    ) -> usize {
         use FlatBinaryOperationKind::*;
-        let offset = match operation {
+        match operation {
             Add => self.emit(&Instruction::AddTargetOffsetLeftOffsetRightImmutable(
                 AddTargetOffsetLeftOffsetRightImmutable {
                     target,
@@ -294,32 +317,29 @@ impl<'a> Compiler<'a> {
                     right,
                 },
             )),
-        };
-        // Only comparisons can fuse with a following jump; for arithmetic
-        // operations `emit()` already cleared `last_comparison`.
-        if let (Some(jifn), Some(jif)) = (
-            comparison_jump_if_not_kind(operation, true),
-            comparison_jump_if_kind(operation, true),
-        ) {
-            self.last_comparison = Some(LastComparison {
-                opcode_offset: offset,
-                target,
-                jump_if_not_kind: jifn,
-                jump_if_kind: jif,
-            });
         }
-        self.last_result_target = Some((offset + FIELD_1_OFFSET, target));
     }
 
-    pub(crate) fn emit_binary_offset(
+    pub(crate) fn emit_binary_immutable(
         &mut self,
         target: u64,
         left: u64,
         right: u64,
         operation: FlatBinaryOperationKind,
     ) {
+        let offset = self.emit_binary_immutable_instruction(target, left, right, operation);
+        self.record_binary_result(offset, target, operation, true);
+    }
+
+    fn emit_binary_offset_instruction(
+        &mut self,
+        target: u64,
+        left: u64,
+        right: u64,
+        operation: FlatBinaryOperationKind,
+    ) -> usize {
         use FlatBinaryOperationKind::*;
-        let offset = match operation {
+        match operation {
             Add => self.emit(&Instruction::AddTargetOffsetLeftOffsetRightOffset(
                 AddTargetOffsetLeftOffsetRightOffset {
                     target,
@@ -401,21 +421,18 @@ impl<'a> Compiler<'a> {
                     right,
                 },
             )),
-        };
-        // Only comparisons can fuse with a following jump; for arithmetic
-        // operations `emit()` already cleared `last_comparison`.
-        if let (Some(jifn), Some(jif)) = (
-            comparison_jump_if_not_kind(operation, false),
-            comparison_jump_if_kind(operation, false),
-        ) {
-            self.last_comparison = Some(LastComparison {
-                opcode_offset: offset,
-                target,
-                jump_if_not_kind: jifn,
-                jump_if_kind: jif,
-            });
         }
-        self.last_result_target = Some((offset + FIELD_1_OFFSET, target));
+    }
+
+    pub(crate) fn emit_binary_offset(
+        &mut self,
+        target: u64,
+        left: u64,
+        right: u64,
+        operation: FlatBinaryOperationKind,
+    ) {
+        let offset = self.emit_binary_offset_instruction(target, left, right, operation);
+        self.record_binary_result(offset, target, operation, false);
     }
 
     pub(crate) fn compile_index_to_offset(&mut self, index: &FlatIndex, target: u64) -> Result<()> {

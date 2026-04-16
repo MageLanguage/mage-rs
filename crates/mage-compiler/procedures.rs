@@ -173,18 +173,14 @@ impl<'a> Compiler<'a> {
                 let FlatIndex::Identifier(name_index) = &call.name else {
                     return ExpressionAnalysis::default();
                 };
+
                 let arguments = self
                     .root
                     .get_extra_indices(call.arguments_start, call.arguments_end);
+                let result =
+                    self.analyze_indices_with_cache(arguments, source_cache, expression_cache);
+
                 if classify_bootstrap_name(self.get_string(*name_index)).is_some() {
-                    let mut result = ExpressionAnalysis::default();
-                    for argument in arguments {
-                        result = result.merge_max(self.analyze_index_with_cache(
-                            argument,
-                            source_cache,
-                            expression_cache,
-                        ));
-                    }
                     return result;
                 }
 
@@ -200,24 +196,16 @@ impl<'a> Compiler<'a> {
                     })
                     .unwrap_or(2);
 
-                let mut result = ExpressionAnalysis::default();
-                for argument in arguments {
-                    result = result.merge_max(self.analyze_index_with_cache(
-                        argument,
-                        source_cache,
-                        expression_cache,
-                    ));
-                }
                 result.with_procedure_call(call_area_slots)
             }
             FlatExpression::Variable(assign) => {
-                self.analyze_index_with_cache(&assign.expression, source_cache, expression_cache)
+                self.analyze_nested_index(assign.expression, source_cache, expression_cache)
             }
             FlatExpression::Constant(assign) => {
-                self.analyze_index_with_cache(&assign.expression, source_cache, expression_cache)
+                self.analyze_nested_index(assign.expression, source_cache, expression_cache)
             }
             FlatExpression::MultipleVariable(multiple) => {
-                self.analyze_index_with_cache(&multiple.expression, source_cache, expression_cache)
+                self.analyze_nested_index(multiple.expression, source_cache, expression_cache)
             }
             FlatExpression::BinaryOperation(binary_operation) => {
                 let left = self.analyze_index_with_cache(
@@ -234,6 +222,32 @@ impl<'a> Compiler<'a> {
             }
             FlatExpression::Member(_) => ExpressionAnalysis::default(),
         }
+    }
+
+    fn analyze_nested_index(
+        &self,
+        index: FlatIndex,
+        source_cache: &[ExpressionAnalysis],
+        expression_cache: &mut [Option<ExpressionAnalysis>],
+    ) -> ExpressionAnalysis {
+        self.analyze_index_with_cache(&index, source_cache, expression_cache)
+    }
+
+    fn analyze_indices_with_cache(
+        &self,
+        indices: &[FlatIndex],
+        source_cache: &[ExpressionAnalysis],
+        expression_cache: &mut [Option<ExpressionAnalysis>],
+    ) -> ExpressionAnalysis {
+        let mut result = ExpressionAnalysis::default();
+        for index in indices {
+            result = result.merge_max(self.analyze_index_with_cache(
+                index,
+                source_cache,
+                expression_cache,
+            ));
+        }
+        result
     }
 
     fn analyze_index_with_cache(

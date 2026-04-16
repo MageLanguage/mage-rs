@@ -49,6 +49,41 @@ fn get_expression<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a FlatExpressi
     }
 }
 
+fn expect_call<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a crate::FlatCall {
+    match get_expression(root, index) {
+        FlatExpression::Call(call) => call,
+        other => panic!("expected Call, got {other:?}"),
+    }
+}
+
+fn call_arguments<'a>(root: &'a FlatRoot, call: &'a crate::FlatCall) -> &'a [FlatIndex] {
+    root.get_extra_indices(call.arguments_start, call.arguments_end)
+}
+
+fn expect_constant<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a crate::FlatAssign {
+    match get_expression(root, index) {
+        FlatExpression::Constant(assign) => assign,
+        other => panic!("expected Constant, got {other:?}"),
+    }
+}
+
+fn expect_multiple_variable<'a>(
+    root: &'a FlatRoot,
+    index: &FlatIndex,
+) -> &'a crate::FlatMultipleVariable {
+    match get_expression(root, index) {
+        FlatExpression::MultipleVariable(multiple) => multiple,
+        other => panic!("expected MultipleVariable, got {other:?}"),
+    }
+}
+
+fn expect_member<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a crate::FlatMember {
+    match get_expression(root, index) {
+        FlatExpression::Member(member) => member,
+        other => panic!("expected Member, got {other:?}"),
+    }
+}
+
 fn expect_identifier<'a>(root: &'a FlatRoot, index: &FlatIndex) -> &'a str {
     match index {
         FlatIndex::Identifier(string_index) => root.get_string(*string_index),
@@ -242,14 +277,9 @@ fn invalid_escape_in_string() {
 #[test]
 fn constant_identifier() {
     let (root, _) = decode("x : 0");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    if let FlatExpression::Constant(assign) = get_expression(&root, &statements[0]) {
-        assert!(matches!(assign.name, FlatIndex::Identifier(_)));
-        assert!(matches!(assign.expression, FlatIndex::Number(_)));
-    } else {
-        panic!("expected Constant");
-    }
+    let assign = expect_constant(&root, &first_statement(&root));
+    assert!(matches!(assign.name, FlatIndex::Identifier(_)));
+    assert!(matches!(assign.expression, FlatIndex::Number(_)));
 }
 
 #[test]
@@ -310,42 +340,28 @@ fn multiple_variable() {
 #[test]
 fn procedure_constructor_syntax_decodes_as_constant() {
     let (root, _) = decode("add : procedure {x : U64; y : U64}, U64 { return x + y; }");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
+    let statement = first_statement(&root);
 
-    let FlatExpression::Constant(assign) = get_expression(&root, &statements[0]) else {
+    let FlatExpression::Constant(assign) = get_expression(&root, &statement) else {
         panic!(
             "expected Constant, got {:?}",
-            get_expression(&root, &statements[0])
+            get_expression(&root, &statement)
         );
     };
 
     assert!(matches!(assign.name, FlatIndex::Identifier(_)));
 
-    let FlatExpression::Call(outer_call) = get_expression(&root, &assign.expression) else {
-        panic!(
-            "expected outer Call, got {:?}",
-            get_expression(&root, &assign.expression)
-        );
-    };
-
-    let FlatExpression::Call(inner_call) = get_expression(&root, &outer_call.name) else {
-        panic!(
-            "expected inner Call as outer callee, got {:?}",
-            get_expression(&root, &outer_call.name)
-        );
-    };
+    let outer_call = expect_call(&root, &assign.expression);
+    let inner_call = expect_call(&root, &outer_call.name);
 
     assert!(matches!(inner_call.name, FlatIndex::Identifier(_)));
 
-    let inner_arguments =
-        root.get_extra_indices(inner_call.arguments_start, inner_call.arguments_end);
+    let inner_arguments = call_arguments(&root, inner_call);
     assert_eq!(inner_arguments.len(), 2);
     assert!(matches!(inner_arguments[0], FlatIndex::Source(_)));
     assert!(matches!(inner_arguments[1], FlatIndex::Identifier(_)));
 
-    let outer_arguments =
-        root.get_extra_indices(outer_call.arguments_start, outer_call.arguments_end);
+    let outer_arguments = call_arguments(&root, outer_call);
     assert_eq!(outer_arguments.len(), 1);
     assert!(matches!(outer_arguments[0], FlatIndex::Source(_)));
 }
@@ -353,29 +369,13 @@ fn procedure_constructor_syntax_decodes_as_constant() {
 #[test]
 fn grouped_callee_followed_by_source_block_decodes_as_call() {
     let (root, _) = decode("(foo bar) {}");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
+    let outer_call = expect_call(&root, &first_statement(&root));
+    let inner_call = expect_call(&root, &outer_call.name);
 
-    let FlatExpression::Call(outer_call) = get_expression(&root, &statements[0]) else {
-        panic!(
-            "expected outer Call, got {:?}",
-            get_expression(&root, &statements[0])
-        );
-    };
-
-    let FlatExpression::Call(inner_call) = get_expression(&root, &outer_call.name) else {
-        panic!(
-            "expected inner Call as grouped/composite callee, got {:?}",
-            get_expression(&root, &outer_call.name)
-        );
-    };
-
-    let inner_arguments =
-        root.get_extra_indices(inner_call.arguments_start, inner_call.arguments_end);
+    let inner_arguments = call_arguments(&root, inner_call);
     assert_eq!(inner_arguments.len(), 1);
 
-    let outer_arguments =
-        root.get_extra_indices(outer_call.arguments_start, outer_call.arguments_end);
+    let outer_arguments = call_arguments(&root, outer_call);
     assert_eq!(outer_arguments.len(), 1);
     assert!(matches!(outer_arguments[0], FlatIndex::Source(_)));
 }
@@ -383,70 +383,42 @@ fn grouped_callee_followed_by_source_block_decodes_as_call() {
 #[test]
 fn multiple_variable_three_names() {
     let (root, _) = decode("a, b, c = foo");
-    if let FlatExpression::MultipleVariable(multi) =
-        get_expression(&root, &source_indices(&root, 0)[0])
-    {
-        let names = root.get_extra_indices(multi.names_start, multi.names_end);
-        assert_eq!(names.len(), 3);
-    } else {
-        panic!("expected MultipleVariable");
-    }
+    let multiple = expect_multiple_variable(&root, &first_statement(&root));
+    let names = root.get_extra_indices(multiple.names_start, multiple.names_end);
+    assert_eq!(names.len(), 3);
 }
 
 #[test]
 fn call_single_argument() {
     let (root, _) = decode("foo bar");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    if let FlatExpression::Call(call) = get_expression(&root, &statements[0]) {
-        assert!(matches!(call.name, FlatIndex::Identifier(_)));
-        let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
-        assert_eq!(arguments.len(), 1);
-        assert!(matches!(arguments[0], FlatIndex::Identifier(_)));
-    } else {
-        panic!("expected Call");
-    }
+    let call = expect_call(&root, &first_statement(&root));
+    assert!(matches!(call.name, FlatIndex::Identifier(_)));
+    let arguments = call_arguments(&root, call);
+    assert_eq!(arguments.len(), 1);
+    assert!(matches!(arguments[0], FlatIndex::Identifier(_)));
 }
 
 #[test]
 fn call_multiple_arguments() {
     let (root, _) = decode("foo bar, baz");
-    if let FlatExpression::Call(call) = get_expression(&root, &source_indices(&root, 0)[0]) {
-        let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
-        assert_eq!(arguments.len(), 2);
-    } else {
-        panic!("expected Call");
-    }
+    let call = expect_call(&root, &first_statement(&root));
+    let arguments = call_arguments(&root, call);
+    assert_eq!(arguments.len(), 2);
 }
 
 #[test]
 fn call_chain_is_left_associative() {
     let (root, _) = decode("foo bar baz");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
+    let outer_call = expect_call(&root, &first_statement(&root));
 
-    let FlatExpression::Call(outer_call) = get_expression(&root, &statements[0]) else {
-        panic!(
-            "expected outer Call, got {:?}",
-            get_expression(&root, &statements[0])
-        );
-    };
-
-    let outer_arguments =
-        root.get_extra_indices(outer_call.arguments_start, outer_call.arguments_end);
+    let outer_arguments = call_arguments(&root, outer_call);
     assert_eq!(outer_arguments.len(), 1);
     assert!(matches!(outer_arguments[0], FlatIndex::Identifier(_)));
 
-    let FlatExpression::Call(inner_call) = get_expression(&root, &outer_call.name) else {
-        panic!(
-            "expected inner Call as left-associated callee, got {:?}",
-            get_expression(&root, &outer_call.name)
-        );
-    };
+    let inner_call = expect_call(&root, &outer_call.name);
 
     assert!(matches!(inner_call.name, FlatIndex::Identifier(_)));
-    let inner_arguments =
-        root.get_extra_indices(inner_call.arguments_start, inner_call.arguments_end);
+    let inner_arguments = call_arguments(&root, inner_call);
     assert_eq!(inner_arguments.len(), 1);
     assert!(matches!(inner_arguments[0], FlatIndex::Identifier(_)));
 }
@@ -454,32 +426,17 @@ fn call_chain_is_left_associative() {
 #[test]
 fn return_participates_in_universal_left_associative_call_syntax() {
     let (root, _) = decode("return add 0d3, 0d4");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
+    let outer_call = expect_call(&root, &first_statement(&root));
 
-    let FlatExpression::Call(outer_call) = get_expression(&root, &statements[0]) else {
-        panic!(
-            "expected outer Call, got {:?}",
-            get_expression(&root, &statements[0])
-        );
-    };
-
-    let outer_arguments =
-        root.get_extra_indices(outer_call.arguments_start, outer_call.arguments_end);
+    let outer_arguments = call_arguments(&root, outer_call);
     assert_eq!(outer_arguments.len(), 2);
     assert!(matches!(outer_arguments[0], FlatIndex::Number(_)));
     assert!(matches!(outer_arguments[1], FlatIndex::Number(_)));
 
-    let FlatExpression::Call(inner_call) = get_expression(&root, &outer_call.name) else {
-        panic!(
-            "expected inner Call as left-associated callee, got {:?}",
-            get_expression(&root, &outer_call.name)
-        );
-    };
+    let inner_call = expect_call(&root, &outer_call.name);
 
     assert!(matches!(inner_call.name, FlatIndex::Identifier(_)));
-    let inner_arguments =
-        root.get_extra_indices(inner_call.arguments_start, inner_call.arguments_end);
+    let inner_arguments = call_arguments(&root, inner_call);
     assert_eq!(inner_arguments.len(), 1);
     assert!(matches!(inner_arguments[0], FlatIndex::Identifier(_)));
 }
@@ -487,50 +444,36 @@ fn return_participates_in_universal_left_associative_call_syntax() {
 #[test]
 fn call_string_argument() {
     let (root, _) = decode(r#"print "hello""#);
-    if let FlatExpression::Call(call) = get_expression(&root, &source_indices(&root, 0)[0]) {
-        let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
-        assert_eq!(arguments.len(), 1);
-        assert!(matches!(arguments[0], FlatIndex::String(_)));
-    } else {
-        panic!("expected Call");
-    }
+    let call = expect_call(&root, &first_statement(&root));
+    let arguments = call_arguments(&root, call);
+    assert_eq!(arguments.len(), 1);
+    assert!(matches!(arguments[0], FlatIndex::String(_)));
 }
 
 #[test]
 fn call_number_argument() {
     let (root, _) = decode("exit 0");
-    if let FlatExpression::Call(call) = get_expression(&root, &source_indices(&root, 0)[0]) {
-        let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
-        assert_eq!(arguments.len(), 1);
-        assert!(matches!(arguments[0], FlatIndex::Number(_)));
-    } else {
-        panic!("expected Call");
-    }
+    let call = expect_call(&root, &first_statement(&root));
+    let arguments = call_arguments(&root, call);
+    assert_eq!(arguments.len(), 1);
+    assert!(matches!(arguments[0], FlatIndex::Number(_)));
 }
 
 #[test]
 fn call_block_argument() {
     let (root, _) = decode("foo {}");
-    if let FlatExpression::Call(call) = get_expression(&root, &source_indices(&root, 0)[0]) {
-        let arguments = root.get_extra_indices(call.arguments_start, call.arguments_end);
-        assert_eq!(arguments.len(), 1);
-        assert!(matches!(arguments[0], FlatIndex::Source(_)));
-    } else {
-        panic!("expected Call");
-    }
+    let call = expect_call(&root, &first_statement(&root));
+    let arguments = call_arguments(&root, call);
+    assert_eq!(arguments.len(), 1);
+    assert!(matches!(arguments[0], FlatIndex::Source(_)));
 }
 
 #[test]
 fn member_access() {
     let (root, _) = decode("a.b");
-    let statements = source_indices(&root, 0);
-    assert_eq!(statements.len(), 1);
-    if let FlatExpression::Member(member) = get_expression(&root, &statements[0]) {
-        assert!(matches!(member.name, FlatIndex::Identifier(_)));
-        assert!(matches!(member.expression, FlatIndex::Identifier(_)));
-    } else {
-        panic!("expected Member");
-    }
+    let member = expect_member(&root, &first_statement(&root));
+    assert!(matches!(member.name, FlatIndex::Identifier(_)));
+    assert!(matches!(member.expression, FlatIndex::Identifier(_)));
 }
 
 #[test]

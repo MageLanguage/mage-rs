@@ -138,6 +138,19 @@ impl<'a> Compiler<'a> {
         root: &'a FlatRoot,
         source_locations: &'a SourceLocations,
     ) -> (Bytecode, SourceMap, PatchMap, Vec<CompileError>) {
+        let mut compiler = Self::new(root, source_locations);
+        compiler.run_pipeline();
+
+        let bytecode = compiler.patch_map.write_bytecode(&compiler.writer.bytecode);
+        (
+            bytecode,
+            compiler.source_map,
+            compiler.patch_map,
+            compiler.errors,
+        )
+    }
+
+    fn new(root: &'a FlatRoot, source_locations: &'a SourceLocations) -> Self {
         let expression_count = root.expressions.len();
         let source_count = root.sources.len();
 
@@ -170,25 +183,37 @@ impl<'a> Compiler<'a> {
         };
 
         compiler.writer.bytecode.reserve(expression_count * 24);
+        compiler
+    }
 
-        if let Err(error) = compiler.register_all_procedures() {
-            compiler.errors.push(error);
-        } else if let Err(error) = compiler.compile_root() {
-            compiler.errors.push(error);
-        } else {
-            compiler.compile_procedures();
-            if let Err(error) = compiler.patch_two_pass_fixups() {
-                compiler.errors.push(error);
-            }
+    fn run_pipeline(&mut self) {
+        if let Err(error) = self.register_all_procedures() {
+            self.errors.push(error);
+            return;
         }
 
-        let bytecode = compiler.patch_map.write_bytecode(&compiler.writer.bytecode);
-        (
-            bytecode,
-            compiler.source_map,
-            compiler.patch_map,
-            compiler.errors,
-        )
+        if let Err(error) = self.compile_root() {
+            self.errors.push(error);
+            return;
+        }
+
+        self.compile_procedures();
+
+        if let Err(error) = self.patch_two_pass_fixups() {
+            self.errors.push(error);
+        }
+    }
+
+    fn emit_return_site_placeholder(&mut self, target: u64) -> usize {
+        self.emit(&Instruction::LoadTargetOffsetSourceImmutable(
+            LoadTargetOffsetSourceImmutable { target, source: 0 },
+        ))
+    }
+
+    fn patch_return_site(&mut self, load_offset: usize, return_offset: usize) {
+        self.patch_u64(load_offset + FIELD_2_OFFSET, return_offset as u64);
+        self.patch_map
+            .push_relocation((load_offset + FIELD_2_OFFSET) as u32);
     }
 
     fn compile_root(&mut self) -> Result<()> {
@@ -199,24 +224,14 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
 
-        let return_count = self.procedures[0].return_count;
-        let return_address_offset = return_count as u64 * VALUE_SIZE;
-
-        let load_offset = self.emit(&Instruction::LoadTargetOffsetSourceImmutable(
-            LoadTargetOffsetSourceImmutable {
-                target: return_address_offset,
-                source: 0,
-            },
-        ));
+        let return_address_offset = self.procedures[0].return_count as u64 * VALUE_SIZE;
+        let load_offset = self.emit_return_site_placeholder(return_address_offset);
 
         self.emit_take_jump_to_procedure(0);
 
         self.exit_offset = self.bytecode_offset();
         self.emit(&Instruction::ExitCodeOffset(ExitCodeOffset { code: 0 }));
-
-        self.patch_u64(load_offset + FIELD_2_OFFSET, self.exit_offset as u64);
-        self.patch_map
-            .push_relocation((load_offset + FIELD_2_OFFSET) as u32);
+        self.patch_return_site(load_offset, self.exit_offset);
 
         Ok(())
     }
@@ -253,58 +268,30 @@ impl<'a> Compiler<'a> {
 
     fn compile_return(&mut self, call: &FlatCall) -> Result<ExpressionResult> {
         let return_count = self.current_return_count(self.current_statement_offset)?;
-
         let arguments = self
             .root
             .get_extra_indices(call.arguments_start, call.arguments_end);
 
-        let _procedure_index =
-            self.current_procedure_index
-                .ok_or(CompileError::return_outside_procedure(
-                    self.current_statement_offset,
-                ))?;
+        self.current_procedure_index
+            .ok_or(CompileError::return_outside_procedure(
+                self.current_statement_offset,
+            ))?;
 
-        // Single-return: compile the expression, then try to retarget
-        // the last instruction to write directly to the return slot,
-        // eliminating the copy instruction.
         if return_count == 1 {
-            let result = if let Some(argument) = arguments.first() {
-                self.compile_index_as_expression(argument)?
-            } else {
-                ExpressionResult::temporary(self.emit_load_immutable(0))
-            };
+            let result = self.compile_return_value_or_zero(arguments, 0)?;
 
             self.sync_frame_layout();
             let target = self.current_layout.return_value_offset(0);
-
-            if result.is_temporary
-                && let Some((field_offset, field_value)) = self.last_result_target.take()
-                && field_value == result.offset
-                && result.offset != target
-            {
-                self.patch_u64(field_offset, target);
-            } else {
-                self.emit_copy_if_needed(result, target);
-            }
+            self.write_return_value(result, target);
             self.temporaries.free_if_temporary(result);
-
-            let return_address_offset = self.current_layout.caller_return_site_id(return_count);
-            self.emit_free_jump_offset(self.current_layout.total, return_address_offset);
+            self.finish_return(return_count);
 
             return Ok(ExpressionResult::variable(target));
         }
 
-        // Multi-return: compile to temporaries first, then copy to return
-        // slots. This avoids aliasing when a later return expression
-        // involves a procedure call that overwrites the call area where
-        // earlier return values were placed.
         let mut compiled_results: Vec<ExpressionResult> = Vec::with_capacity(return_count);
         for return_index in 0..return_count {
-            if let Some(argument) = arguments.get(return_index) {
-                compiled_results.push(self.compile_index_as_expression(argument)?);
-            } else {
-                compiled_results.push(ExpressionResult::temporary(self.emit_load_immutable(0)));
-            }
+            compiled_results.push(self.compile_return_value_or_zero(arguments, return_index)?);
         }
 
         self.sync_frame_layout();
@@ -315,12 +302,40 @@ impl<'a> Compiler<'a> {
             self.temporaries.free_if_temporary(result);
         }
 
-        let return_address_offset = self.current_layout.caller_return_site_id(return_count);
-        self.emit_free_jump_offset(self.current_layout.total, return_address_offset);
+        self.finish_return(return_count);
 
         Ok(ExpressionResult::variable(
             self.current_layout.return_value_offset(0),
         ))
+    }
+
+    fn compile_return_value_or_zero(
+        &mut self,
+        arguments: &[FlatIndex],
+        return_index: usize,
+    ) -> Result<ExpressionResult> {
+        if let Some(argument) = arguments.get(return_index) {
+            self.compile_index_as_expression(argument)
+        } else {
+            Ok(ExpressionResult::temporary(self.emit_load_immutable(0)))
+        }
+    }
+
+    fn write_return_value(&mut self, result: ExpressionResult, target: u64) {
+        if result.is_temporary
+            && let Some((field_offset, field_value)) = self.last_result_target.take()
+            && field_value == result.offset
+            && result.offset != target
+        {
+            self.patch_u64(field_offset, target);
+        } else {
+            self.emit_copy_if_needed(result, target);
+        }
+    }
+
+    fn finish_return(&mut self, return_count: usize) {
+        let return_address_offset = self.current_layout.caller_return_site_id(return_count);
+        self.emit_free_jump_offset(self.current_layout.total, return_address_offset);
     }
 
     pub(crate) fn emit_call_sequence(
@@ -346,21 +361,12 @@ impl<'a> Compiler<'a> {
         }
 
         let return_id_offset = self.current_layout.return_site_id_offset(return_count);
-
-        let load_offset = self.emit(&Instruction::LoadTargetOffsetSourceImmutable(
-            LoadTargetOffsetSourceImmutable {
-                target: return_id_offset,
-                source: 0,
-            },
-        ));
+        let load_offset = self.emit_return_site_placeholder(return_id_offset);
 
         self.emit_take_jump_to_procedure(procedure_index);
 
         let return_offset = self.bytecode_offset();
-
-        self.patch_u64(load_offset + FIELD_2_OFFSET, return_offset as u64);
-        self.patch_map
-            .push_relocation((load_offset + FIELD_2_OFFSET) as u32);
+        self.patch_return_site(load_offset, return_offset);
 
         Ok(())
     }

@@ -112,6 +112,41 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn create_variable_binding(&mut self, name_index: u32, is_constant: bool) -> u64 {
+        let offset = self.temporaries.allocate();
+        self.variables.push(VariableBinding {
+            name_index,
+            offset,
+            is_constant,
+        });
+        offset
+    }
+
+    fn declare_constant_target(&mut self, name_index: u32) -> Result<u64> {
+        if self.find_variable_in_current_scope(name_index).is_some() {
+            return Err(CompileError::duplicate_constant(
+                self.current_statement_offset,
+                self.identifier_text(name_index),
+            ));
+        }
+
+        Ok(self.create_variable_binding(name_index, true))
+    }
+
+    fn resolve_variable_target(&mut self, name_index: u32) -> Result<(u64, bool)> {
+        if let Some(binding) = self.find_variable(name_index) {
+            if binding.is_constant {
+                return Err(CompileError::assignment_to_constant(
+                    self.current_statement_offset,
+                    self.identifier_text(name_index),
+                ));
+            }
+            return Ok((binding.offset, false));
+        }
+
+        Ok((self.create_variable_binding(name_index, false), true))
+    }
+
     fn compile_constant(&mut self, constant: &FlatAssign) -> Result<()> {
         let FlatIndex::Identifier(name_index) = &constant.name else {
             return Err(CompileError::invalid_constant_target(
@@ -123,22 +158,7 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
 
-        if self.find_variable_in_current_scope(*name_index).is_some() {
-            return Err(CompileError::duplicate_constant(
-                self.current_statement_offset,
-                self.identifier_text(*name_index),
-            ));
-        }
-
-        let target_offset = {
-            let offset = self.temporaries.allocate();
-            self.variables.push(VariableBinding {
-                name_index: *name_index,
-                offset,
-                is_constant: true,
-            });
-            offset
-        };
+        let target_offset = self.declare_constant_target(*name_index)?;
 
         if let Err(error) = self.compile_index_to_offset(&constant.expression, target_offset) {
             self.emit_poison_value(target_offset);
@@ -155,25 +175,7 @@ impl<'a> Compiler<'a> {
             ));
         };
 
-        let mut is_new_variable = false;
-        let target_offset = if let Some(binding) = self.find_variable(*name_index) {
-            if binding.is_constant {
-                return Err(CompileError::assignment_to_constant(
-                    self.current_statement_offset,
-                    self.identifier_text(*name_index),
-                ));
-            }
-            binding.offset
-        } else {
-            is_new_variable = true;
-            let offset = self.temporaries.allocate();
-            self.variables.push(VariableBinding {
-                name_index: *name_index,
-                offset,
-                is_constant: false,
-            });
-            offset
-        };
+        let (target_offset, is_new_variable) = self.resolve_variable_target(*name_index)?;
 
         if let Err(error) = self.compile_index_to_offset(&assign.expression, target_offset) {
             if is_new_variable {
@@ -252,31 +254,18 @@ impl<'a> Compiler<'a> {
     fn resolve_assignment_targets(&mut self, names: &[FlatIndex]) -> Result<()> {
         self.target_offsets_scratch.clear();
         self.target_offsets_scratch.reserve(names.len());
+
         for name in names {
             let FlatIndex::Identifier(name_index) = name else {
                 return Err(CompileError::invalid_multiple_assignment_target(
                     self.current_statement_offset,
                 ));
             };
-            let offset = if let Some(binding) = self.find_variable(*name_index) {
-                if binding.is_constant {
-                    return Err(CompileError::assignment_to_constant(
-                        self.current_statement_offset,
-                        self.identifier_text(*name_index),
-                    ));
-                }
-                binding.offset
-            } else {
-                let offset = self.temporaries.allocate();
-                self.variables.push(VariableBinding {
-                    name_index: *name_index,
-                    offset,
-                    is_constant: false,
-                });
-                offset
-            };
+
+            let (offset, _is_new_variable) = self.resolve_variable_target(*name_index)?;
             self.target_offsets_scratch.push(offset);
         }
+
         Ok(())
     }
 }
