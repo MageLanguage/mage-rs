@@ -82,7 +82,7 @@ impl Notification {
 }
 
 pub fn read_message(reader: &mut impl BufRead) -> io::Result<String> {
-    let content_length = read_content_length(reader)?;
+    let content_length = read_message_content_length(reader)?;
     let mut content = vec![0u8; content_length];
     reader.read_exact(&mut content)?;
     decode_message_content(content)
@@ -98,7 +98,7 @@ pub fn send_message(message: &impl Serialize) -> io::Result<()> {
     stdout.flush()
 }
 
-fn read_content_length(reader: &mut impl BufRead) -> io::Result<usize> {
+fn read_message_content_length(reader: &mut impl BufRead) -> io::Result<usize> {
     let mut content_length: Option<usize> = None;
     let mut line = String::new();
 
@@ -109,12 +109,12 @@ fn read_content_length(reader: &mut impl BufRead) -> io::Result<usize> {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, UNEXPECTED_EOF));
         }
 
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+        let header_line = line.trim();
+        if header_line.is_empty() {
             break;
         }
 
-        if let Some(value) = trimmed.strip_prefix(CONTENT_LENGTH_HEADER) {
+        if let Some(value) = header_line.strip_prefix(CONTENT_LENGTH_HEADER) {
             content_length = value.parse().ok();
         }
     }
@@ -122,8 +122,8 @@ fn read_content_length(reader: &mut impl BufRead) -> io::Result<usize> {
     content_length.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, MISSING_CONTENT_LENGTH))
 }
 
-fn decode_message_content(content: Vec<u8>) -> io::Result<String> {
-    String::from_utf8(content).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+fn decode_message_content(bytes: Vec<u8>) -> io::Result<String> {
+    String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
 fn frame_message(content: &str) -> String {

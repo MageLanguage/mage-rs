@@ -46,13 +46,15 @@ fn binding_key(definition: &Definition) -> (usize, usize, &'static str) {
     )
 }
 
-fn procedure_parameter_names(document: &DocumentState, procedure_name: &str) -> Vec<String> {
+fn root_entries(document: &DocumentState) -> &[FlatIndex] {
     let root_source = document.root.sources[0];
-    let root_entries = document
+    document
         .root
-        .get_extra_indices(root_source.start, root_source.end);
+        .get_extra_indices(root_source.start, root_source.end)
+}
 
-    for &root_entry in root_entries {
+fn procedure_parameter_names(document: &DocumentState, procedure_name: &str) -> Vec<String> {
+    for &root_entry in root_entries(document) {
         let FlatIndex::Expression(expression_index) = root_entry else {
             continue;
         };
@@ -143,12 +145,7 @@ fn find_variable_definitions(document: &DocumentState, name: &str) -> Vec<Defini
 }
 
 fn root_statement_assign(document: &DocumentState, statement_index: usize) -> &FlatAssign {
-    let root_source = document.root.sources[0];
-    let root_entries = document
-        .root
-        .get_extra_indices(root_source.start, root_source.end);
-
-    let FlatIndex::Expression(expression_index) = root_entries[statement_index] else {
+    let FlatIndex::Expression(expression_index) = root_entries(document)[statement_index] else {
         panic!("expected root expression");
     };
 
@@ -198,15 +195,14 @@ fn binding_accurate_reference_offsets(document: &DocumentState, usage_offset: us
 }
 
 fn inner_source_index(document: &DocumentState) -> usize {
-    let root_source = document.root.sources[0];
-    let root_entries = document
-        .root
-        .get_extra_indices(root_source.start, root_source.end);
-
-    if let FlatExpression::Call(call) = document.root.get_expression(match root_entries[0] {
-        FlatIndex::Expression(expression_index) => expression_index,
-        _ => panic!("expected expression"),
-    }) {
+    if let FlatExpression::Call(call) =
+        document
+            .root
+            .get_expression(match root_entries(document)[0] {
+                FlatIndex::Expression(expression_index) => expression_index,
+                _ => panic!("expected expression"),
+            })
+    {
         match document
             .root
             .get_extra_indices(call.arguments_start, call.arguments_end)[0]

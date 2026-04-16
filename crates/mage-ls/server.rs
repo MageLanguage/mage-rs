@@ -192,13 +192,23 @@ impl LanguageServer {
         })
     }
 
-    fn handle_hover(&self, parameters: &Value) -> Option<Value> {
-        let uri = text_document_uri(parameters)?;
+    fn request_identifier_context<'server>(
+        &'server self,
+        parameters: &Value,
+    ) -> Option<(String, &'server DocumentState, usize, &'server str)> {
+        let document_uri = text_document_uri(parameters)?;
         let (line, character) = text_document_position(parameters)?;
 
-        let document = self.documents.get(&uri)?;
+        let document = self.documents.get(&document_uri)?;
         let offset = lsp_position_to_offset(&document.line_index, line, character)?;
         let identifier = find_identifier_at_offset(&document.source, offset)?;
+
+        Some((document_uri, document, offset, identifier))
+    }
+
+    fn handle_hover(&self, parameters: &Value) -> Option<Value> {
+        let (_document_uri, document, offset, identifier) =
+            self.request_identifier_context(parameters)?;
 
         let definition = find_definition_at_offset(document, identifier, offset)?;
         let statement_text = extract_statement_text(
@@ -216,12 +226,8 @@ impl LanguageServer {
     }
 
     fn handle_definition(&self, parameters: &Value) -> Option<Value> {
-        let uri = text_document_uri(parameters)?;
-        let (line, character) = text_document_position(parameters)?;
-
-        let document = self.documents.get(&uri)?;
-        let offset = lsp_position_to_offset(&document.line_index, line, character)?;
-        let identifier = find_identifier_at_offset(&document.source, offset)?;
+        let (document_uri, document, offset, identifier) =
+            self.request_identifier_context(parameters)?;
 
         let definition = find_definition_at_offset(document, identifier, offset)?;
 
@@ -231,7 +237,7 @@ impl LanguageServer {
         let end_character = definition_character + identifier.len() as u32;
 
         Some(json!({
-            "uri": uri,
+            "uri": document_uri,
             "range": {
                 "start": { "line": definition_line, "character": definition_character },
                 "end": { "line": definition_line, "character": end_character }

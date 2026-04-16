@@ -121,7 +121,7 @@ fn resolve_definition_in_source(
     let source = document.root.sources.get(source_index)?;
     let statements = document.root.get_extra_indices(source.start, source.end);
 
-    let current_statement = document.source_locations.statement_containing_offset(
+    let usage_statement_index = document.source_locations.statement_containing_offset(
         source_index,
         usage_offset,
         source_end,
@@ -131,7 +131,7 @@ fn resolve_definition_in_source(
         document,
         statements,
         source_index,
-        current_statement,
+        usage_statement_index,
         name,
         usage_offset,
         source_end,
@@ -141,7 +141,7 @@ fn resolve_definition_in_source(
             document,
             statements,
             source_index,
-            current_statement,
+            usage_statement_index,
             name,
         )
     })
@@ -152,12 +152,12 @@ fn resolve_definition_in_nested_source(
     document: &DocumentState,
     statements: &[FlatIndex],
     source_index: usize,
-    current_statement: usize,
+    usage_statement_index: usize,
     name: &str,
     usage_offset: usize,
     source_end: usize,
 ) -> Option<Definition> {
-    for statement_index in (0..=current_statement).rev() {
+    for statement_index in (0..=usage_statement_index).rev() {
         let (_, statement_end) = document
             .source_locations
             .statement_range(source_index, statement_index, source_end)
@@ -194,20 +194,14 @@ fn resolve_definition_in_current_source(
     document: &DocumentState,
     statements: &[FlatIndex],
     source_index: usize,
-    current_statement: usize,
+    usage_statement_index: usize,
     name: &str,
 ) -> Option<Definition> {
-    for statement_index in (0..=current_statement).rev() {
-        let source_offset = document
-            .source_locations
-            .statement_offset(source_index, statement_index)
-            .unwrap_or(0);
-
-        if let Some(definition) = match_statement_definition(
-            &document.root,
+    for statement_index in (0..=usage_statement_index).rev() {
+        if let Some(definition) = statement_definition_at(
+            document,
             source_index,
             statement_index,
-            source_offset,
             statements[statement_index],
             name,
         ) {
@@ -361,6 +355,28 @@ fn match_statement_definition(
     None
 }
 
+fn statement_definition_at(
+    document: &DocumentState,
+    source_index: usize,
+    statement_index: usize,
+    statement: FlatIndex,
+    name: &str,
+) -> Option<Definition> {
+    let source_offset = document
+        .source_locations
+        .statement_offset(source_index, statement_index)
+        .unwrap_or(0);
+
+    match_statement_definition(
+        &document.root,
+        source_index,
+        statement_index,
+        source_offset,
+        statement,
+        name,
+    )
+}
+
 fn search_entire_source(
     document: &DocumentState,
     source_index: usize,
@@ -370,19 +386,9 @@ fn search_entire_source(
     let statements = document.root.get_extra_indices(source.start, source.end);
 
     for (statement_index, &statement) in statements.iter().enumerate() {
-        let source_offset = document
-            .source_locations
-            .statement_offset(source_index, statement_index)
-            .unwrap_or(0);
-
-        if let Some(definition) = match_statement_definition(
-            &document.root,
-            source_index,
-            statement_index,
-            source_offset,
-            statement,
-            name,
-        ) {
+        if let Some(definition) =
+            statement_definition_at(document, source_index, statement_index, statement, name)
+        {
             return Some(definition);
         }
     }

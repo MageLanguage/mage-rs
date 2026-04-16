@@ -1,16 +1,16 @@
 use std::io::Cursor;
 
-use super::{Notification, Response, read_message};
+use super::{Notification, Response, frame_message, read_message};
 use serde_json::{Value, json};
 
-fn framed(content: &str) -> String {
-    format!("{}{}\r\n\r\n{}", "Content-Length: ", content.len(), content)
+fn frame_message_for_test(content: &str) -> String {
+    frame_message(content)
 }
 
 #[test]
 fn read_message_parses_content_length_framed_input() {
     let content = r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#;
-    let input = framed(content);
+    let input = frame_message_for_test(content);
     let mut reader = Cursor::new(input.as_bytes());
 
     let result = read_message(&mut reader).unwrap();
@@ -52,7 +52,11 @@ fn read_message_handles_multiple_headers() {
 fn read_message_reads_two_consecutive_messages() {
     let first = r#"{"jsonrpc":"2.0","id":1}"#;
     let second = r#"{"jsonrpc":"2.0","id":2}"#;
-    let input = format!("{}{}", framed(first), framed(second));
+    let input = format!(
+        "{}{}",
+        frame_message_for_test(first),
+        frame_message_for_test(second)
+    );
     let mut reader = Cursor::new(input.as_bytes());
 
     assert_eq!(read_message(&mut reader).unwrap(), first);
