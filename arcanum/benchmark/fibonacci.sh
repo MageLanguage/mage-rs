@@ -1,1 +1,1 @@
-hyperfine --prepare 'sync' --warmup 50 --shell=none 'cast fibonacci.hex' 'cast fibonacci.bytecode' 'cyber fibonacci.cy' 'wren fibonacci.wren' 'lua fibonacci.lua' 'lua fibonacci.luac' 'python fibonacci.py'
+hyperfine --prepare 'sync' --warmup 50 --shell=none 'cast fibonacci.hex' 'wren fibonacci.wren' 'lua fibonacci.lua' 'python fibonacci.py'

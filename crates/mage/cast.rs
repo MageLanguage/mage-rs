@@ -3,7 +3,7 @@ mod arguments;
 use arguments::{Output, ParsedArguments, parse};
 use mage_ast::encode::Encoder;
 use mage_compiler::Compiler;
-use mage_contract::{Bytecode, Code, FlatRoot, LoadError, Reader, SourceMap, Stage};
+use mage_contract::{Bytecode, Code, FlatRoot, LoadError, Reader, Stage};
 use mage_native::VirtualMachine;
 use serde::Serialize;
 use serde_text::{Format, Section};
@@ -202,33 +202,7 @@ impl Printer {
     }
 }
 
-fn save_artifacts(
-    path: &str,
-    source: &str,
-    bytecode: &Bytecode,
-    source_map: &SourceMap,
-) -> Result<(), mage::Error> {
-    let bytecode_path = Path::new(path).with_extension("bytecode");
-    mage_loader::save_bytecode(
-        bytecode_path
-            .to_str()
-            .expect("path derived from str is valid UTF-8"),
-        bytecode,
-    )?;
-
-    let map_data = mage_contract::write_map(source, bytecode, source_map);
-    let map_path = Path::new(path).with_extension("map");
-    mage_loader::save_map(
-        map_path
-            .to_str()
-            .expect("path derived from str is valid UTF-8"),
-        &map_data,
-    )?;
-
-    Ok(())
-}
-
-fn run_hex(path: &str, stage: Stage, printer: &Printer, save: bool) -> ExitCode {
+fn run_hex(path: &str, stage: Stage, printer: &Printer) -> ExitCode {
     let code = match mage_loader::load(path) {
         Ok(source) => Code::new(source),
         Err(error) => return printer.fail(error.into()),
@@ -249,14 +223,10 @@ fn run_hex(path: &str, stage: Stage, printer: &Printer, save: bool) -> ExitCode 
         return ExitCode::SUCCESS;
     }
 
-    let (mut bytecode, source_map) = match Compiler::compile(&root, &source_locations) {
+    let (mut bytecode, _) = match Compiler::compile(&root, &source_locations) {
         Ok(pair) => pair,
         Err(error) => return printer.fail(error.into()),
     };
-
-    if save && let Err(error) = save_artifacts(path, code.source(), &bytecode, &source_map) {
-        return printer.fail(error);
-    }
 
     match stage {
         Stage::Compile => {
@@ -302,7 +272,7 @@ fn main() -> ExitCode {
         stage,
         output,
         format,
-        save,
+        ..
     } = parse();
 
     let printer = Printer { output, format };
@@ -321,23 +291,8 @@ fn main() -> ExitCode {
         );
     }
 
-    if save {
-        if input_kind != InputKind::Hex {
-            return printer.fail(LoadError::SaveUnsupportedExtension { path: path.clone() }.into());
-        }
-
-        if matches!(stage, Stage::Load | Stage::Flatten) {
-            return printer.fail(
-                LoadError::SaveUnsupportedStage {
-                    stage: stage.name().into(),
-                }
-                .into(),
-            );
-        }
-    }
-
     match input_kind {
-        InputKind::Hex => run_hex(&path, stage, &printer, save),
+        InputKind::Hex => run_hex(&path, stage, &printer),
         InputKind::Bytecode => run_bytecode(&path, stage, &printer),
     }
 }

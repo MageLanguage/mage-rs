@@ -66,8 +66,6 @@ pub struct Arguments {
     pub output: CliOutput,
     #[arg(long, default_value = "pretty")]
     pub format: CliFormat,
-    #[arg(long)]
-    pub save: bool,
 }
 
 /// Parsed CLI arguments converted into internal runtime types.
@@ -76,7 +74,6 @@ pub struct ParsedArguments {
     pub stage: mage_contract::Stage,
     pub output: Output,
     pub format: serde_text::Format,
-    pub save: bool,
 }
 
 pub fn parse() -> ParsedArguments {
@@ -86,6 +83,5 @@ pub fn parse() -> ParsedArguments {
         stage: arguments.stage.into(),
         output: arguments.output.into(),
         format: arguments.format.into(),
-        save: arguments.save,
     }
 }

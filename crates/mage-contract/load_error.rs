@@ -26,12 +26,6 @@ pub enum LoadError {
         #[serde(skip_serializing_if = "Option::is_none")]
         code: Option<u64>,
     },
-    SaveUnsupportedExtension {
-        path: String,
-    },
-    SaveUnsupportedStage {
-        stage: String,
-    },
 }
 
 impl From<io::Error> for LoadError {
@@ -79,20 +73,6 @@ impl fmt::Display for LoadError {
             }
             LoadError::InvalidBytecode { code: Some(code) } => {
                 write!(formatter, "invalid instruction code: {}", code)
-            }
-            LoadError::SaveUnsupportedExtension { path } => {
-                write!(
-                    formatter,
-                    "'--save' requires a '.hex' input, got '{}'",
-                    path
-                )
-            }
-            LoadError::SaveUnsupportedStage { stage } => {
-                write!(
-                    formatter,
-                    "'--save' requires '--stage compile' or '--stage execute', got '--stage {}'",
-                    stage
-                )
             }
         }
     }

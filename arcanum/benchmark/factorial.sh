@@ -1,1 +1,1 @@
-hyperfine --prepare 'sync' --warmup 50 --shell=none 'cast factorial.hex' 'cast factorial.bytecode' 'cyber factorial.cy' 'wren factorial.wren' 'lua factorial.lua' 'lua factorial.luac' 'python factorial.py'
+hyperfine --prepare 'sync' --warmup 50 --shell=none 'cast factorial.hex' 'wren factorial.wren' 'lua factorial.lua' 'python factorial.py'
