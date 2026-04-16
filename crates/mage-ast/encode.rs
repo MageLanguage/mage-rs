@@ -152,7 +152,7 @@ impl<'a> Encoder<'a> {
             output.push('.');
             self.write_index(&implicit_member, output);
         } else {
-            self.write_index(&call.name, output);
+            self.write_callee_index(&call.name, output);
         }
 
         let arguments = self
@@ -356,6 +356,15 @@ impl<'a> Encoder<'a> {
         )
     }
 
+    fn should_wrap_callee_expression(&self, expression: &FlatExpression) -> bool {
+        matches!(
+            expression,
+            FlatExpression::Constant(_)
+                | FlatExpression::Variable(_)
+                | FlatExpression::BinaryOperation(_)
+        )
+    }
+
     fn write_index_unwrapped(&mut self, index: &FlatIndex, output: &mut String) {
         if self.write_non_expression_index(index, output) {
             return;
@@ -367,6 +376,26 @@ impl<'a> Encoder<'a> {
 
         let expression = self.root.get_expression(*expression_index);
         self.write_expression(expression, output);
+    }
+
+    fn write_callee_index(&mut self, index: &FlatIndex, output: &mut String) {
+        if self.write_non_expression_index(index, output) {
+            return;
+        }
+
+        let FlatIndex::Expression(expression_index) = index else {
+            return;
+        };
+
+        let expression = self.root.get_expression(*expression_index);
+
+        if self.should_wrap_callee_expression(expression) {
+            output.push('(');
+            self.write_expression(expression, output);
+            output.push(')');
+        } else {
+            self.write_expression(expression, output);
+        }
     }
 
     fn write_index(&mut self, index: &FlatIndex, output: &mut String) {

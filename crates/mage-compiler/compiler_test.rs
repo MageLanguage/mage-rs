@@ -440,9 +440,8 @@ fn while_with_continue() {
 
 #[test]
 fn procedure_declaration_does_not_emit_inline() {
-    let instructions = compile_instructions(
-        "add_one : (procedure {n : U64}, U64) { return n + 0d1; }; return 0d0;",
-    );
+    let instructions =
+        compile_instructions("add_one : procedure {n : U64}, U64 { return n + 0d1; }; return 0d0;");
     assert!(has(&instructions, is_take));
     assert!(has(&instructions, is_free));
 }
@@ -450,7 +449,7 @@ fn procedure_declaration_does_not_emit_inline() {
 #[test]
 fn procedure_call() {
     let instructions = compile_instructions(
-        "add_one : (procedure {n : U64}, U64) { return n + 0d1; }; return add_one 0d10;",
+        "add_one : procedure {n : U64}, U64 { return n + 0d1; }; return (add_one 0d10);",
     );
     // Root entry Take + user procedure Take.
     let take_count = count(&instructions, is_take);
@@ -459,13 +458,13 @@ fn procedure_call() {
 
 #[test]
 fn procedure_multiple_parameters() {
-    compile("add : (procedure {a : U64; b : U64}, U64) { return a + b; }; return add 0d3, 0d4;");
+    compile("add : procedure {a : U64; b : U64}, U64 { return a + b; }; return (add 0d3, 0d4);");
 }
 
 #[test]
 fn procedure_called_from_multiple_sites() {
     let instructions = compile_instructions(
-        "f : (procedure {n : U64}, U64) { return n + 0d1; }; a = f 0d1; b = f 0d2; return a + b;",
+        "f : procedure {n : U64}, U64 { return n + 0d1; }; a = f 0d1; b = f 0d2; return a + b;",
     );
     // Root entry + two user calls.
     let take_count = count(&instructions, is_take);
@@ -475,7 +474,7 @@ fn procedure_called_from_multiple_sites() {
 #[test]
 fn procedure_direct_return_via_jump_offset() {
     let instructions = compile_instructions(
-        "f : (procedure {n : U64}, U64) { return n; }; a = f 0d1; b = f 0d2; return a + b;",
+        "f : procedure {n : U64}, U64 { return n; }; a = f 0d1; b = f 0d2; return a + b;",
     );
     // Direct return uses JumpToOffset to read the return address from the stack.
     assert!(
@@ -488,7 +487,7 @@ fn procedure_direct_return_via_jump_offset() {
 #[test]
 fn procedure_single_call_site_direct_return() {
     let instructions =
-        compile_instructions("f : (procedure {n : U64}, U64) { return n; }; return f 0d5;");
+        compile_instructions("f : procedure {n : U64}, U64 { return n; }; return (f 0d5);");
     // Single call site skips the dispatch comparison — returns directly.
     let has_dispatch_compare = instructions.iter().any(|i| {
         matches!(
@@ -502,18 +501,18 @@ fn procedure_single_call_site_direct_return() {
 #[test]
 fn recursive_procedure() {
     compile(
-        "fibonacci : (procedure {n : U64}, U64) { \
+        "fibonacci : procedure {n : U64}, U64 { \
             if n < 0d2, { return n; }; \
             return (fibonacci n - 0d1) + (fibonacci n - 0d2); \
          }; \
-         return fibonacci 0d10;",
+         return (fibonacci 0d10);",
     );
 }
 
 #[test]
 fn procedure_multiple_return_values() {
     compile(
-        "exchange : (procedure {a : U64; b : U64}, {c : U64; d : U64}) { \
+        "exchange : procedure {a : U64; b : U64}, {c : U64; d : U64} { \
             return b, a; \
          }; \
          c, d = exchange 0d10, 0d20; \
@@ -524,13 +523,13 @@ fn procedure_multiple_return_values() {
 #[test]
 fn procedure_implicit_return() {
     let instructions =
-        compile_instructions("noop : (procedure {n : U64}, U64) { n + 0d1; }; return noop 0d1;");
+        compile_instructions("noop : procedure {n : U64}, U64 { n + 0d1; }; return (noop 0d1);");
     assert!(has(&instructions, is_jump));
 }
 
 #[test]
 fn procedure_discard_return_value() {
-    compile("f : (procedure {n : U64}, U64) { return n; }; f 0d5; return 0d0;");
+    compile("f : procedure {n : U64}, U64 { return n; }; f 0d5; return 0d0;");
 }
 
 // --- Number formats ---
@@ -665,9 +664,9 @@ fn frame_grows_with_variables() {
 #[test]
 fn procedure_frame_includes_call_area() {
     let instructions = compile_instructions(
-        "inner : (procedure {n : U64}, U64) { return n; }; \
-         outer : (procedure {n : U64}, U64) { return inner n; }; \
-         return outer 0d5;",
+        "inner : procedure {n : U64}, U64 { return n; }; \
+         outer : procedure {n : U64}, U64 { return (inner n); }; \
+         return (outer 0d5);",
     );
     // Root + outer + inner = at least 3 Take instructions.
     let take_count = count(&instructions, is_take);
@@ -719,7 +718,7 @@ fn while_non_block_body_is_error() {
 #[test]
 fn undefined_procedure_is_error() {
     assert!(matches!(
-        try_compile("return unknown 0d1;"),
+        try_compile("return (unknown 0d1);"),
         Err(CompileError::UndefinedProcedure { ref name, .. }) if name == "unknown"
     ));
 }
@@ -759,7 +758,7 @@ fn undefined_variable_in_assignment_is_error() {
 #[test]
 fn undefined_variable_in_call_argument_is_error() {
     assert!(matches!(
-        try_compile("f : (procedure {n : U64}, U64) { return n; }; return f x;"),
+        try_compile("f : procedure {n : U64}, U64 { return n; }; return (f x);"),
         Err(CompileError::UndefinedVariable { ref name, .. }) if name == "x"
     ));
 }
@@ -787,7 +786,7 @@ fn assignment_with_invalid_target_is_error() {
 
 #[test]
 fn multiple_assignment_with_invalid_target_is_error() {
-    let code = "f : (procedure {n : U64}, {x : U64; y : U64}) { return n, n; }; a.b, c = f 0d1;";
+    let code = "f : procedure {n : U64}, {x : U64; y : U64} { return n, n; }; a.b, c = f 0d1;";
     assert!(matches!(
         try_compile(code),
         Err(CompileError::InvalidMultipleAssignmentTarget { .. })
@@ -796,7 +795,7 @@ fn multiple_assignment_with_invalid_target_is_error() {
 
 #[test]
 fn procedure_type_constructor_without_body_compiles() {
-    assert!(try_compile("f : (procedure 0d1, 0d2);").is_ok());
+    assert!(try_compile("f : procedure 0d1, 0d2;").is_ok());
 }
 
 // --- Error offsets ---
@@ -929,9 +928,9 @@ fn recovering_no_cascade_after_constant_error() {
 fn recovering_procedure_error_does_not_corrupt_next_procedure() {
     // First procedure has an error; second procedure should compile fine.
     let code = "\
-        bad_proc : (procedure {}, U64) { return undefined_var; }; \
-        good_proc : (procedure {n : U64}, U64) { return n + 0d1; }; \
-        return good_proc 0d5;";
+        bad_proc : procedure {}, U64 { return undefined_var; }; \
+        good_proc : procedure {n : U64}, U64 { return n + 0d1; }; \
+        return (good_proc 0d5);";
     let (bytecode, _, _, errors) = compile_recovering(code);
     assert_eq!(errors.len(), 1);
     assert!(matches!(
@@ -1093,7 +1092,7 @@ fn multiple_variable_assignment_to_constant_is_error() {
     // a is a constant; trying to assign to it via multiple-variable syntax
     let code = "\
         a : 0d1; \
-        f : (procedure {n : U64}, {x : U64; y : U64}) { return n, n; }; \
+        f : procedure {n : U64}, {x : U64; y : U64} { return n, n; }; \
         a, b = f 0d5;";
     assert!(matches!(
         try_compile(code),
@@ -1120,11 +1119,11 @@ fn procedure_parameters_not_affected_by_body_scope() {
     // Parameters should remain accessible throughout the procedure body,
     // even after inner blocks exit.
     compile(
-        "f : (procedure {a : U64; b : U64}, U64) { \
+        "f : procedure {a : U64; b : U64}, U64 { \
              if a < b, { x : 0d1; }; \
              return a + b; \
          }; \
-         return f 0d3, 0d4;",
+         return (f 0d3, 0d4);",
     );
 }
 
@@ -1170,7 +1169,7 @@ fn source_map_round_trip_lookup() {
 #[test]
 fn source_map_for_procedure() {
     let (_, source_map, _) =
-        compile("f : (procedure {n : U64}, U64) { return n + 0d1; }; return f 0d5;");
+        compile("f : procedure {n : U64}, U64 { return n + 0d1; }; return (f 0d5);");
     assert!(source_map.len() >= 2);
 }
 
@@ -1202,7 +1201,8 @@ fn take_jump_fused_for_root_entry() {
 
 #[test]
 fn take_jump_fused_for_procedure_call() {
-    let (_, _, patch_map) = compile("f : (procedure {n : U64}, U64) { return n; }; return f 0d5;");
+    let (_, _, patch_map) =
+        compile("f : procedure {n : U64}, U64 { return n + 0d1; }; return (f 0d5);");
     // Root entry + one user call = at least 2 TakeStackSizeImmutableJumpToImmutable fusions.
     assert!(
         count_superinstruction(
@@ -1214,7 +1214,7 @@ fn take_jump_fused_for_procedure_call() {
 
 #[test]
 fn free_jump_offset_fused_for_procedure_return() {
-    let (_, _, patch_map) = compile("f : (procedure {n : U64}, U64) { return n; }; return f 0d5;");
+    let (_, _, patch_map) = compile("f : procedure {n : U64}, U64 { return n; }; return (f 0d5);");
     assert!(has_superinstruction(
         &patch_map,
         SuperinstructionKind::FreeStackSizeImmutableJumpToOffset
@@ -1272,9 +1272,8 @@ fn no_comparison_fusion_for_variable_condition() {
 
 #[test]
 fn multi_site_uses_free_jump_offset() {
-    let (_, _, patch_map) = compile(
-        "f : (procedure {n : U64}, U64) { return n; }; a = f 0d1; b = f 0d2; return a + b;",
-    );
+    let (_, _, patch_map) =
+        compile("f : procedure {n : U64}, U64 { return n; }; a = f 0d1; b = f 0d2; return a + b;");
     // With direct return addresses, no dispatch table is needed.
     // Instead, FreeStackSizeImmutableJumpToOffset is used for procedure returns.
     assert!(has_superinstruction(
@@ -1384,13 +1383,13 @@ fn all_fixture_programs_compile_and_decode() {
         "if 0d1 < 0d2, { return 0d1; }; return 0d0;",
         "if 0d2 < 0d1, { return 0d1; }; return 0d0;",
         "sum = 0d0; i = 0d0; while i < 0d10, { sum = sum + i; i = i + 0d1; }; return sum;",
-        "add : (procedure {a : U64; b : U64}, U64) { return a + b; }; return add 0d3, 0d4;",
-        "f : (procedure {n : U64}, U64) { return n; }; a = f 0d1; b = f 0d2; return a + b;",
-        "fibonacci : (procedure {n : U64}, U64) { \
+        "add : procedure {a : U64; b : U64}, U64 { return a + b; }; return (add 0d3, 0d4);",
+        "f : procedure {n : U64}, U64 { return n; }; a = f 0d1; b = f 0d2; return a + b;",
+        "fibonacci : procedure {n : U64}, U64 { \
             if n < 0d2, { return n; }; \
             return (fibonacci n - 0d1) + (fibonacci n - 0d2); \
-         }; return fibonacci 0d10;",
-        "exchange : (procedure {a : U64; b : U64}, {c : U64; d : U64}) { \
+         }; return (fibonacci 0d10);",
+        "exchange : procedure {a : U64; b : U64}, {c : U64; d : U64} { \
             return b, a; \
          }; c, d = exchange 0d10, 0d20; return c - d;",
     ];

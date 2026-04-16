@@ -1,4 +1,3 @@
-mod builtins;
 mod document;
 mod server;
 mod transport;

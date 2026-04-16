@@ -976,45 +976,50 @@ impl<'a> Decoder<'a> {
         matches!(index, FlatIndex::Identifier(_) | FlatIndex::Expression(_))
     }
 
+    fn parse_application_argument(&mut self) -> Result<FlatIndex, DecodeError> {
+        self.skip_whitespace();
+        let atom = self.parse_atom()?;
+        self.parse_binary_rhs(atom, 0)
+    }
+
     fn parse_call_with_atom(
         &mut self,
         atom: FlatIndex,
         atom_offset: u32,
     ) -> Result<FlatIndex, DecodeError> {
-        if !self.can_be_callee(&atom) {
-            return Ok(atom);
-        }
+        let mut callee = atom;
 
-        self.skip_whitespace();
+        loop {
+            if !self.can_be_callee(&callee) {
+                return Ok(callee);
+            }
 
-        if !self.can_start_atom() {
-            return Ok(atom);
-        }
-
-        let mut arguments = Vec::with_capacity(4);
-        arguments.push(self.parse_expression()?);
-        self.skip_whitespace();
-
-        while self.consume(b',') {
             self.skip_whitespace();
-            arguments.push(self.parse_expression()?);
-            self.skip_whitespace();
-        }
 
-        while self.can_start_atom() {
-            arguments.push(self.parse_expression()?);
-            self.skip_whitespace();
-        }
+            if !self.can_start_atom() {
+                return Ok(callee);
+            }
 
-        let (arguments_start, arguments_end) = self.push_indices(arguments);
-        Ok(self.push_expression(
-            FlatExpression::Call(FlatCall {
-                name: atom,
-                arguments_start,
-                arguments_end,
-            }),
-            atom_offset,
-        ))
+            let mut arguments = Vec::with_capacity(4);
+            arguments.push(self.parse_application_argument()?);
+            self.skip_whitespace();
+
+            while self.consume(b',') {
+                self.skip_whitespace();
+                arguments.push(self.parse_application_argument()?);
+                self.skip_whitespace();
+            }
+
+            let (arguments_start, arguments_end) = self.push_indices(arguments);
+            callee = self.push_expression(
+                FlatExpression::Call(FlatCall {
+                    name: callee,
+                    arguments_start,
+                    arguments_end,
+                }),
+                atom_offset,
+            );
+        }
     }
 
     fn parse_atom(&mut self) -> Result<FlatIndex, DecodeError> {

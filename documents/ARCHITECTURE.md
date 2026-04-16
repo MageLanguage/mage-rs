@@ -38,13 +38,13 @@ The current codebase already contains:
 The current codebase partially implements or prototypes:
 
 - syntax for the language
-- the required grouped procedure-constructor syntax
-- AST encoding for the required grouped procedure-constructor syntax
-- compiler recognition of the required grouped procedure declaration shape
+- the required direct procedure declaration syntax
+- AST encoding for the required direct procedure declaration syntax
+- compiler recognition of the required direct procedure declaration shape
 - stack-based calling convention
 - source-to-bytecode mapping
 - LSP diagnostics from parsing
-- procedure-definition classification in the language server for the required grouped procedure declaration shape
+- procedure-definition classification in the language server for the required direct procedure declaration shape
 - bytecode reading and pretty printing
 
 ### 1.3. Not implemented yet
@@ -259,11 +259,11 @@ InMemoryCounter : Class {
 };
 
 newInMemoryCounter : implement InMemoryCounter, Counter, {
-    add : (procedure {in_memory_counter : ^InMemoryCounter}, Void) {
+    add : procedure {in_memory_counter : ^InMemoryCounter}, Void {
         in_memory_counter.count = in_memory_counter.count + 1;
     };
 
-    get : (procedure {in_memory_counter : ^InMemoryCounter}, U64) {
+    get : procedure {in_memory_counter : ^InMemoryCounter}, U64 {
         return in_memory_counter.count;
     };
 };
@@ -280,30 +280,32 @@ service = Service 0;
 The required procedure declaration syntax is:
 
 ```mage
-add : (procedure {x : U64; y : U64}, U64) {
+add : procedure {x : U64; y : U64}, U64 {
     return x + y;
 }
 ```
 
-This syntax is important because it makes the semantics explicit.
+Call syntax is universal and left-associative.
 
-It should be understood as two steps:
-
-1. call `procedure Arguments, ReturnValues`
-2. obtain a procedure type value
-3. call that procedure type with a source block
-4. obtain a procedure instance value
-
-Equivalent expanded form:
+That means:
 
 ```mage
-add_type : procedure {x : U64; y : U64}, U64;
-add : add_type {
-    return x + y;
-}
+return add 0d3, 0d4;
 ```
 
-This is the current required model for procedure declarations.
+is understood as:
+
+```mage
+(return add) 0d3, 0d4;
+```
+
+If the intent is to return the result of a call, the call must be grouped explicitly:
+
+```mage
+return (add 0d3, 0d4);
+```
+
+This is the current required model for procedure declarations and call syntax.
 
 ### 4.3. Procedures are variables
 

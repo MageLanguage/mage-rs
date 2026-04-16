@@ -1,7 +1,6 @@
 use serde_json::{Value, json};
 use std::{collections::HashMap, io};
 
-use crate::builtins;
 use crate::document::{
     self, DocumentState, compute_diagnostics, content_change_text, extract_statement_text,
     find_definition_at_offset, find_identifier_at_offset, lsp_position_to_offset,
@@ -200,10 +199,6 @@ impl LanguageServer {
         let document = self.documents.get(&uri)?;
         let offset = lsp_position_to_offset(&document.line_index, line, character)?;
         let identifier = find_identifier_at_offset(&document.source, offset)?;
-
-        if let Some(documentation) = builtins::builtin_documentation(identifier) {
-            return Some(self.markdown_response(documentation));
-        }
 
         let definition = find_definition_at_offset(document, identifier, offset)?;
         let statement_text = extract_statement_text(

@@ -91,21 +91,19 @@ fn dollar_prefixed_method_returns_null_without_error() {
 // --- Hover ---
 
 #[test]
-fn hover_returns_builtin_documentation_for_procedure() {
+fn hover_returns_null_for_procedure_without_definition() {
     let mut language_server = LanguageServer::new();
     let uri = "file:///test.hex";
     open_document(
         &mut language_server,
         uri,
-        "add : (procedure {x : U64}, U64) { return x; };",
+        "add : procedure {x : U64}, U64 { return x; };",
     );
 
     let parameters = hover_parameters(uri, 0, 7);
     let response = language_server.handle_request("textDocument/hover", &request_id(), &parameters);
-    let result = response.result.unwrap();
 
-    let contents = &result["contents"]["value"];
-    assert!(contents.as_str().unwrap().contains("defines a procedure"));
+    assert_eq!(response.result, Some(Value::Null));
 }
 
 #[test]
@@ -153,10 +151,10 @@ fn hover_classifies_procedure_definitions() {
     open_document(
         &mut language_server,
         uri,
-        "identity : (procedure { x : U64 }, U64) { return x; }; identity 0d1;",
+        "identity : procedure { x : U64 }, U64 { return x; }; identity 0d1;",
     );
 
-    let offset = "identity : (procedure { x : U64 }, U64) { return x; }; ".len();
+    let offset = "identity : procedure { x : U64 }, U64 { return x; }; ".len();
     let parameters = hover_parameters(uri, 0, offset as u32);
     let response = language_server.handle_request("textDocument/hover", &request_id(), &parameters);
     let result = response.result.unwrap();
@@ -251,10 +249,10 @@ fn did_close_removes_document() {
     assert_eq!(response.result, Some(Value::Null));
 }
 
-// --- Hover for builtin types ---
+// --- Hover without hardcoded builtins ---
 
 #[test]
-fn hover_returns_documentation_for_builtin_type_in_source() {
+fn hover_returns_null_for_runtime_specific_builtin_like_name_without_definition() {
     let mut language_server = LanguageServer::new();
     let uri = "file:///test.hex";
     open_document(&mut language_server, uri, "x : U64;");
@@ -262,10 +260,8 @@ fn hover_returns_documentation_for_builtin_type_in_source() {
     let offset = "x : ".len();
     let parameters = hover_parameters(uri, 0, offset as u32);
     let response = language_server.handle_request("textDocument/hover", &request_id(), &parameters);
-    let result = response.result.unwrap();
 
-    let contents = result["contents"]["value"].as_str().unwrap();
-    assert!(contents.contains("unsigned integer"));
+    assert_eq!(response.result, Some(Value::Null));
 }
 
 // --- Variable hover ---

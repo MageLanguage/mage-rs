@@ -215,27 +215,27 @@ fn pretty_nested_blocks() {
 #[test]
 fn simple_procedure_constructor_syntax() {
     assert_eq!(
-        decode_encode_simple("add : (procedure {x : U64; y : U64}, U64) { return x + y; }"),
-        "add:(procedure {x:U64;y:U64},U64) {return x+y}"
+        decode_encode_simple("add : procedure {x : U64; y : U64}, U64 { return x + y; }"),
+        "add:procedure {x:U64;y:U64},U64 {return x+y}"
     );
 }
 
 #[test]
 fn pretty_procedure_constructor_syntax() {
     assert_eq!(
-        decode_encode_pretty("add : (procedure {x : U64; y : U64}, U64) { return x + y; }"),
-        "add : (procedure {\n\tx : U64;\n\ty : U64;\n}, U64) {\n\treturn x + y;\n};"
+        decode_encode_pretty("add : procedure {x : U64; y : U64}, U64 { return x + y; }"),
+        "add : procedure {\n\tx : U64;\n\ty : U64;\n}, U64 {\n\treturn x + y;\n};"
     );
 }
 
 #[test]
 fn simple_grouped_callee_with_source_block_argument() {
-    assert_eq!(decode_encode_simple("(foo bar) {}"), "(foo bar) {}");
+    assert_eq!(decode_encode_simple("(foo bar) {}"), "foo bar {}");
 }
 
 #[test]
 fn pretty_grouped_callee_with_source_block_argument() {
-    assert_eq!(decode_encode_pretty("(foo bar) {}"), "(foo bar) {};");
+    assert_eq!(decode_encode_pretty("(foo bar) {}"), "foo bar {};");
 }
 
 #[test]
@@ -297,6 +297,38 @@ fn pretty_continued_call_application_after_comma_list() {
             "for environment.arguments, {argument : String} { writer.write argument; }"
         ),
         "for environment.arguments, {\n\targument : String;\n} {\n\twriter.write argument;\n};"
+    );
+}
+
+#[test]
+fn simple_left_associative_return_call_chain() {
+    assert_eq!(
+        decode_encode_simple("return add 0d3, 0d4"),
+        "return add 0d3,0d4"
+    );
+}
+
+#[test]
+fn pretty_left_associative_return_call_chain() {
+    assert_eq!(
+        decode_encode_pretty("return add 0d3, 0d4"),
+        "return add 0d3, 0d4;"
+    );
+}
+
+#[test]
+fn simple_left_associative_long_call_chain() {
+    assert_eq!(
+        decode_encode_simple("math.subtract math.add 0d5, 0d5, 0d10"),
+        "math.subtract math.add 0d5,0d5,0d10"
+    );
+}
+
+#[test]
+fn pretty_left_associative_long_call_chain() {
+    assert_eq!(
+        decode_encode_pretty("math.subtract math.add 0d5, 0d5, 0d10"),
+        "math.subtract math.add 0d5, 0d5, 0d10;"
     );
 }
 
@@ -699,10 +731,9 @@ fn encode_simple() {
 }
 
 #[test]
-fn single_call_argument_unwrapped() {
-    // When a call's only argument is itself a call with an identifier
-    // callee, the argument is written without wrapping parens so
-    // left-associative call chaining like `foo bar baz` round-trips.
+fn left_associative_call_chain_stays_unwrapped() {
+    // Left-associative call chains should round-trip without inserting
+    // grouping parens around a call used as the next callee.
     let (root, _) = crate::decode("foo bar baz").unwrap();
     assert_eq!(Encoder::encode(&root, Format::Simple), "foo bar baz");
 }
