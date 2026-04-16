@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use mage_ast::{FlatAssign, FlatExpression, FlatIndex};
+use mage_ast::{FlatAssign, FlatExpression, FlatIndex, recognize_procedure_declaration};
 use serde_json::json;
 
 use super::{
@@ -66,43 +66,12 @@ fn procedure_parameter_names(document: &DocumentState, procedure_name: &str) -> 
             continue;
         }
 
-        let FlatIndex::Expression(procedure_expression_index) = assign.expression else {
-            continue;
-        };
-
-        let FlatExpression::Call(outer_call) =
-            document.root.get_expression(procedure_expression_index)
+        let Some(shape) = recognize_procedure_declaration(&document.root, &assign.expression)
         else {
             continue;
         };
 
-        let FlatIndex::Expression(callee_expression_index) = outer_call.name else {
-            continue;
-        };
-
-        let FlatExpression::Call(inner_call) =
-            document.root.get_expression(callee_expression_index)
-        else {
-            continue;
-        };
-
-        let FlatIndex::Identifier(call_name_index) = inner_call.name else {
-            continue;
-        };
-
-        if document.root.get_string(call_name_index) != "procedure" {
-            continue;
-        }
-
-        let Some(FlatIndex::Source(parameter_source_index)) = document
-            .root
-            .get_extra_indices(inner_call.arguments_start, inner_call.arguments_end)
-            .first()
-        else {
-            continue;
-        };
-
-        let parameter_source = document.root.sources[*parameter_source_index as usize];
+        let parameter_source = document.root.sources[shape.parameter_source_index];
         let mut parameter_names = Vec::new();
 
         for &parameter_index in document
@@ -459,7 +428,7 @@ fn find_definition_returns_variable_definition_from_multiple_assignment() {
 
 #[test]
 fn find_definition_classifies_procedure_definition() {
-    let source = "main : (procedure void, Void) { return 0d0; }; main void;";
+    let source = "main : procedure {}, Void { return 0d0; }; main void;";
     let document = DocumentState::new(String::from(source));
     let usage_offset = source.rfind("main").unwrap();
 
@@ -661,7 +630,7 @@ fn shadowing_tests_preserve_inner_scope_statement_text_for_hover() {
 
 #[test]
 fn procedure_parameter_names_collect_declared_parameters() {
-    let source = "identity : (procedure { value : Any }, Void) { return value; };";
+    let source = "identity : procedure { value : Any }, Void { return value; };";
     let document = DocumentState::new(String::from(source));
 
     let parameter_names = procedure_parameter_names(&document, "identity");
@@ -672,7 +641,7 @@ fn procedure_parameter_names_collect_declared_parameters() {
 #[test]
 fn procedure_parameter_names_preserve_parameter_order() {
     let source =
-        "pair : (procedure { left : Any; right : Any }, Void) { return left; return right; };";
+        "pair : procedure { left : Any; right : Any }, Void { return left; return right; };";
     let document = DocumentState::new(String::from(source));
 
     let parameter_names = procedure_parameter_names(&document, "pair");
@@ -713,7 +682,7 @@ fn collect_identifier_occurrences_ignores_identifier_substrings() {
 
 #[test]
 fn collect_identifier_occurrences_handles_parameter_name_references() {
-    let source = "identity : (procedure { value : Any }, Void) { return value; };";
+    let source = "identity : procedure { value : Any }, Void { return value; };";
     let offsets = collect_identifier_occurrences(source, "value");
 
     assert_eq!(offsets.len(), 2);
@@ -729,7 +698,7 @@ fn collect_identifier_occurrences_handles_shadowed_names_in_nested_scope() {
 
 #[test]
 fn collect_identifier_occurrences_handles_procedure_name_references() {
-    let source = "identity : (procedure { value : Any }, Void) { return value; }; identity value;";
+    let source = "identity : procedure { value : Any }, Void { return value; }; identity value;";
     let offsets = collect_identifier_occurrences(source, "identity");
 
     assert_eq!(offsets.len(), 2);
@@ -798,7 +767,8 @@ fn binding_accurate_references_for_inner_variable_exclude_outer_variable() {
 
 #[test]
 fn binding_accurate_references_for_parameter_exclude_outer_binding_with_same_name() {
-    let source = "value = 0d1; identity : (procedure { value : Any }, Void) { return value; }; return value;";
+    let source =
+        "value = 0d1; identity : procedure { value : Any }, Void { return value; }; return value;";
     let document = DocumentState::new(String::from(source));
     let procedure_body_offset = source
         .rfind("{ return value; }")
@@ -835,7 +805,7 @@ fn binding_accurate_references_for_parameter_exclude_outer_binding_with_same_nam
 
 #[test]
 fn binding_accurate_references_for_procedure_name_include_declaration_and_call() {
-    let source = "identity : (procedure { value : Any }, Void) { return value; }; identity value;";
+    let source = "identity : procedure { value : Any }, Void { return value; }; identity value;";
     let document = DocumentState::new(String::from(source));
     let usage_offset = source.rfind("identity").expect("expected procedure call");
 

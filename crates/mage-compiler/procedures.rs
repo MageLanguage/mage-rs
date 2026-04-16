@@ -1,7 +1,9 @@
 use crate::Compiler;
 use crate::layout::{ExpressionAnalysis, FrameLayout, Procedure, VALUE_SIZE, VariableBinding};
 
-use mage_ast::{FlatCall, FlatExpression, FlatIndex};
+use mage_ast::{
+    FlatExpression, FlatIndex, classify_bootstrap_name, recognize_procedure_declaration,
+};
 use mage_contract::{CompileError, Instruction, LoadTargetOffsetSourceImmutable};
 
 type Result<T> = std::result::Result<T, CompileError>;
@@ -109,69 +111,13 @@ impl<'a> Compiler<'a> {
         &self,
         expression: FlatIndex,
     ) -> Option<(usize, Option<usize>, usize)> {
-        let FlatIndex::Expression(expression_index) = expression else {
-            return None;
-        };
-        let FlatExpression::Call(call) = self.root.get_expression(expression_index) else {
-            return None;
-        };
-
-        let mut chained_arguments = Vec::with_capacity(4);
-        let root_name_index =
-            self.collect_left_associated_call_chain(call, &mut chained_arguments)?;
-        if self.get_string(root_name_index) != "procedure" {
-            return None;
-        }
-
-        let mut source_indices: Vec<usize> = chained_arguments
-            .into_iter()
-            .filter_map(|argument| match argument {
-                FlatIndex::Source(source_index) => Some(source_index as usize),
-                _ => None,
-            })
-            .collect();
-
-        let parameter_source_index = *source_indices.first()?;
-        source_indices.remove(0);
-        let body_source_index = source_indices.pop()?;
-
-        let return_source_index = match source_indices.len() {
-            0 => None,
-            1 => Some(source_indices[0]),
-            _ => return None,
-        };
+        let shape = recognize_procedure_declaration(self.root, &expression)?;
 
         Some((
-            parameter_source_index,
-            return_source_index,
-            body_source_index,
+            shape.parameter_source_index,
+            shape.return_source_index,
+            shape.body_source_index,
         ))
-    }
-
-    fn collect_left_associated_call_chain(
-        &self,
-        call: &FlatCall,
-        arguments: &mut Vec<FlatIndex>,
-    ) -> Option<u32> {
-        let root_name_index = match call.name {
-            FlatIndex::Identifier(name_index) => name_index,
-            FlatIndex::Expression(callee_expression_index) => {
-                let FlatExpression::Call(inner_call) =
-                    self.root.get_expression(callee_expression_index)
-                else {
-                    return None;
-                };
-                self.collect_left_associated_call_chain(inner_call, arguments)?
-            }
-            _ => return None,
-        };
-
-        arguments.extend_from_slice(
-            self.root
-                .get_extra_indices(call.arguments_start, call.arguments_end),
-        );
-
-        Some(root_name_index)
     }
 
     fn compute_procedure_layout(&self, source_index: usize) -> FrameLayout {
@@ -230,7 +176,7 @@ impl<'a> Compiler<'a> {
                 let arguments = self
                     .root
                     .get_extra_indices(call.arguments_start, call.arguments_end);
-                if self.is_builtin_keyword(*name_index) {
+                if classify_bootstrap_name(self.get_string(*name_index)).is_some() {
                     let mut result = ExpressionAnalysis::default();
                     for argument in arguments {
                         result = result.merge_max(self.analyze_index_with_cache(

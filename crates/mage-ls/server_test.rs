@@ -264,6 +264,31 @@ fn hover_returns_null_for_runtime_specific_builtin_like_name_without_definition(
     assert_eq!(response.result, Some(Value::Null));
 }
 
+#[test]
+fn hover_returns_null_for_runtime_specific_control_name_without_definition() {
+    let mut language_server = LanguageServer::new();
+    let uri = "file:///test.hex";
+    open_document(&mut language_server, uri, "if condition, { value = 0d1; };");
+
+    let parameters = hover_parameters(uri, 0, 0);
+    let response = language_server.handle_request("textDocument/hover", &request_id(), &parameters);
+
+    assert_eq!(response.result, Some(Value::Null));
+}
+
+#[test]
+fn hover_returns_null_for_runtime_specific_constructor_like_name_without_definition() {
+    let mut language_server = LanguageServer::new();
+    let uri = "file:///test.hex";
+    open_document(&mut language_server, uri, "x : Class;");
+
+    let offset = "x : ".len();
+    let parameters = hover_parameters(uri, 0, offset as u32);
+    let response = language_server.handle_request("textDocument/hover", &request_id(), &parameters);
+
+    assert_eq!(response.result, Some(Value::Null));
+}
+
 // --- Variable hover ---
 
 #[test]

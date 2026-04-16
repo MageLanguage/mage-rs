@@ -323,7 +323,7 @@ fn match_statement_definition(
 
     match root.get_expression(expression_index) {
         FlatExpression::Constant(assign) if identifier_matches(root, &assign.name, name) => {
-            let kind = if is_procedure_definition(root, &assign.expression) {
+            let kind = if mage_ast::is_procedure_definition(root, &assign.expression) {
                 "procedure"
             } else {
                 "constant"
@@ -399,26 +399,6 @@ pub fn identifier_matches(root: &FlatRoot, index: &FlatIndex, name: &str) -> boo
         },
         _ => false,
     }
-}
-
-pub fn is_procedure_definition(root: &FlatRoot, index: &FlatIndex) -> bool {
-    let FlatIndex::Expression(expression_index) = index else {
-        return false;
-    };
-    let FlatExpression::Call(outer_call) = root.get_expression(*expression_index) else {
-        return false;
-    };
-    let FlatIndex::Expression(callee_expression_index) = outer_call.name else {
-        return false;
-    };
-    let FlatExpression::Call(inner_call) = root.get_expression(callee_expression_index) else {
-        return false;
-    };
-    let FlatIndex::Identifier(name_index) = inner_call.name else {
-        return false;
-    };
-
-    root.get_string(name_index) == "procedure"
 }
 
 pub fn extract_statement_text(

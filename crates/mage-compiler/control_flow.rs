@@ -137,89 +137,76 @@ impl<'a> Compiler<'a> {
             .root
             .get_extra_indices(call.arguments_start, call.arguments_end);
 
-        let named_identifier_index = match arguments.first() {
+        let Some(identifier_index) = match arguments.first() {
             Some(FlatIndex::Identifier(index)) => Some(*index),
             _ => None,
-        };
-
-        if let Some(identifier_index) = named_identifier_index {
-            let block_label_id = self
-                .block_patches
-                .iter()
-                .rev()
-                .find(|patch| self.string_index_equals(patch.name_index, identifier_index))
-                .map(|patch| patch.if_end_label_id);
-
-            if let Some(label_id) = block_label_id {
-                self.emit_jump_to_label(FixupLabel::IfEnd { id: label_id });
-                return Ok(ExpressionResult::variable(0));
-            }
-
-            let while_label_id = self
-                .while_patches
-                .iter()
-                .rev()
-                .find(|patch| {
-                    patch.name_index.is_some_and(|name_index| {
-                        self.string_index_equals(name_index, identifier_index)
-                    })
-                })
-                .map(|patch| patch.while_end_label_id);
-
-            if let Some(label_id) = while_label_id {
-                self.emit_jump_to_label(FixupLabel::WhileEnd { id: label_id });
-                return Ok(ExpressionResult::variable(0));
-            }
-
-            return Err(CompileError::break_unresolved_target(
-                self.current_statement_offset,
-                self.identifier_text(identifier_index),
-            ));
-        }
-
-        let Some(while_patch) = self.while_patches.last() else {
+        } else {
             return Err(CompileError::break_outside_block(
                 self.current_statement_offset,
             ));
         };
 
-        let label_id = while_patch.while_end_label_id;
-        self.emit_jump_to_label(FixupLabel::WhileEnd { id: label_id });
-        Ok(ExpressionResult::variable(0))
+        let block_label_id = self
+            .block_patches
+            .iter()
+            .rev()
+            .find(|patch| self.string_index_equals(patch.name_index, identifier_index))
+            .map(|patch| patch.if_end_label_id);
+
+        if let Some(label_id) = block_label_id {
+            self.emit_jump_to_label(FixupLabel::IfEnd { id: label_id });
+            return Ok(ExpressionResult::variable(0));
+        }
+
+        let while_label_id = self
+            .while_patches
+            .iter()
+            .rev()
+            .find(|patch| {
+                patch.name_index.is_some_and(|name_index| {
+                    self.string_index_equals(name_index, identifier_index)
+                })
+            })
+            .map(|patch| patch.while_end_label_id);
+
+        if let Some(label_id) = while_label_id {
+            self.emit_jump_to_label(FixupLabel::WhileEnd { id: label_id });
+            return Ok(ExpressionResult::variable(0));
+        }
+
+        Err(CompileError::break_unresolved_target(
+            self.current_statement_offset,
+            self.identifier_text(identifier_index),
+        ))
     }
 
     pub(crate) fn compile_continue(&mut self, call: &FlatCall) -> Result<ExpressionResult> {
         let arguments = self
             .root
             .get_extra_indices(call.arguments_start, call.arguments_end);
-        let named_identifier_index =
+        let Some(identifier_index) =
             if let Some(FlatIndex::Identifier(identifier_index)) = arguments.first() {
                 Some(*identifier_index)
             } else {
                 None
-            };
-
-        let target_while = if let Some(identifier_index) = named_identifier_index {
-            self.while_patches.iter().rev().find(|patch| {
-                patch.name_index.is_some_and(|name_index| {
-                    self.string_index_equals(name_index, identifier_index)
-                })
-            })
-        } else {
-            self.while_patches.last()
+            }
+        else {
+            return Err(CompileError::continue_outside_while(
+                self.current_statement_offset,
+            ));
         };
 
-        let Some(while_patch) = target_while else {
-            return if let Some(identifier_index) = named_identifier_index {
-                Err(CompileError::continue_unresolved_target(
-                    self.current_statement_offset,
-                    self.identifier_text(identifier_index),
-                ))
-            } else {
-                Err(CompileError::continue_outside_while(
-                    self.current_statement_offset,
-                ))
-            };
+        let while_patch = self.while_patches.iter().rev().find(|patch| {
+            patch.name_index.is_some_and(|name_index| {
+                self.string_index_equals(name_index, identifier_index)
+            })
+        });
+
+        let Some(while_patch) = while_patch else {
+            return Err(CompileError::continue_unresolved_target(
+                self.current_statement_offset,
+                self.identifier_text(identifier_index),
+            ));
         };
 
         let while_condition_label_id = while_patch.while_condition_label_id;

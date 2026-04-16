@@ -113,6 +113,17 @@ That includes names such as:
 
 The default runtime may be populated with these variables at startup, but they remain ordinary variables from the language point of view.
 
+In the current bootstrap semantics, `break` and `continue` are still ordinary callable names, but they are only valid when called with an explicit target label.
+
+Current bootstrap examples:
+
+```mage
+break loop_label;
+continue loop_label;
+```
+
+Unlabeled forms are not part of the current bootstrap semantics.
+
 This is important because later Mage should support different runtime populators. For example:
 
 - a full general-purpose runtime with procedures, control flow, and import
@@ -306,6 +317,15 @@ return (add 0d3, 0d4);
 ```
 
 This is the current required model for procedure declarations and call syntax.
+
+The same universal call rule applies to bootstrap control flow helpers.
+
+That means `break` and `continue` are not treated as special syntax with implicit targets. In the current bootstrap semantics they must be called with an explicit label:
+
+```mage
+break loop_label;
+continue loop_label;
+```
 
 ### 4.3. Procedures are variables
 

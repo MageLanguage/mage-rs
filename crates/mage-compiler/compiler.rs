@@ -80,7 +80,10 @@ use layout::{
 use temporaries::TemporaryAllocator;
 use two_pass::TwoPassState;
 
-use mage_ast::{FlatAssign, FlatCall, FlatIndex, FlatRoot, SourceLocations};
+use mage_ast::{
+    BootstrapForm, FlatAssign, FlatCall, FlatIndex, FlatRoot, SourceLocations,
+    classify_bootstrap_call_expression, classify_bootstrap_name,
+};
 use mage_contract::{
     Bytecode, CompileError, ExitCodeImmutable, ExitCodeOffset, Instruction,
     LoadTargetOffsetSourceImmutable, PatchMap, SourceMap, Writer,
@@ -219,22 +222,21 @@ impl<'a> Compiler<'a> {
     }
 
     pub(crate) fn compile_call(&mut self, call: &FlatCall) -> Result<ExpressionResult> {
+        match classify_bootstrap_call_expression(self.root, call) {
+            Some(BootstrapForm::Return) => return self.compile_return(call),
+            Some(BootstrapForm::If) => return self.compile_if(call),
+            Some(BootstrapForm::While) => return self.compile_while(call),
+            Some(BootstrapForm::Break) => return self.compile_break(call),
+            Some(BootstrapForm::Continue) => return self.compile_continue(call),
+            Some(BootstrapForm::Procedure) => return Ok(ExpressionResult::variable(0)),
+            None => {}
+        }
+
         let FlatIndex::Identifier(identifier_index) = &call.name else {
             return Err(CompileError::unsupported_call_target(
                 self.current_statement_offset,
             ));
         };
-
-        let id = *identifier_index;
-        match self.get_string(id) {
-            "return" => return self.compile_return(call),
-            "if" => return self.compile_if(call),
-            "while" => return self.compile_while(call),
-            "break" => return self.compile_break(call),
-            "continue" => return self.compile_continue(call),
-            "procedure" => return Ok(ExpressionResult::variable(0)),
-            _ => {}
-        }
 
         let procedure_index = match self.find_procedure_index(*identifier_index) {
             Some(index) => index,
@@ -418,11 +420,12 @@ impl<'a> Compiler<'a> {
         Ok(self.procedures[index].return_count)
     }
 
+    pub(crate) fn bootstrap_form_name(&self, name_index: u32) -> Option<BootstrapForm> {
+        classify_bootstrap_name(self.get_string(name_index))
+    }
+
     pub(crate) fn is_return_call(&self, call: &FlatCall) -> bool {
-        let FlatIndex::Identifier(identifier_index) = &call.name else {
-            return false;
-        };
-        self.get_string(*identifier_index) == "return"
+        classify_bootstrap_call_expression(self.root, call) == Some(BootstrapForm::Return)
     }
 
     pub(crate) fn find_procedure_index(&self, identifier_index: u32) -> Option<usize> {
@@ -467,14 +470,6 @@ impl<'a> Compiler<'a> {
         // AST deduplication. However, programmatic or non-interned ASTs might not,
         // so we fall back to a full string comparison.
         self.get_string(a) == self.get_string(b)
-    }
-
-    #[inline]
-    pub(crate) fn is_builtin_keyword(&self, name_index: u32) -> bool {
-        matches!(
-            self.get_string(name_index),
-            "return" | "if" | "while" | "break" | "continue" | "procedure"
-        )
     }
 
     #[inline]

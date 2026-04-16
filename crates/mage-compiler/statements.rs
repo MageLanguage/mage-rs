@@ -89,7 +89,7 @@ impl<'a> Compiler<'a> {
     fn compile_call_as_statement(&mut self, call: &FlatCall) -> Option<ExpressionResult> {
         let procedure_index = match &call.name {
             FlatIndex::Identifier(identifier_index)
-                if !self.is_builtin_keyword(*identifier_index) =>
+                if self.bootstrap_form_name(*identifier_index).is_none() =>
             {
                 self.find_procedure_index(*identifier_index)
             }

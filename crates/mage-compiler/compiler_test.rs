@@ -404,9 +404,9 @@ fn while_with_break_if_block() {
 }
 
 #[test]
-fn while_with_break_no_argument() {
-    let instructions = compile_instructions("i = 0d0; while i < 0d10, { i = i + 0d1; break; };");
-    // break with no argument should emit a jump past the loop
+fn while_with_labeled_break() {
+    let instructions = compile_instructions("i = 0d0; while i < 0d10, { i = i + 0d1; break i; };");
+    // labeled break should emit a jump past the loop
     assert!(count(&instructions, is_jump) >= 2);
 }
 
@@ -432,8 +432,8 @@ fn nested_while_break_outer() {
 }
 
 #[test]
-fn while_with_continue() {
-    compile("i = 0d0; while i < 0d5, { i = i + 0d1; continue; };");
+fn while_with_labeled_continue() {
+    compile("i = 0d0; while i < 0d5, { i = i + 0d1; continue i; };");
 }
 
 // --- Procedures ---
@@ -796,6 +796,22 @@ fn multiple_assignment_with_invalid_target_is_error() {
 #[test]
 fn procedure_type_constructor_without_body_compiles() {
     assert!(try_compile("f : procedure 0d1, 0d2;").is_ok());
+}
+
+#[test]
+fn break_requires_explicit_label() {
+    assert!(matches!(
+        try_compile("break missing;"),
+        Err(CompileError::BreakUnresolvedTarget { ref name, .. }) if name == "missing"
+    ));
+}
+
+#[test]
+fn continue_requires_explicit_label() {
+    assert!(matches!(
+        try_compile("continue missing;"),
+        Err(CompileError::ContinueUnresolvedTarget { ref name, .. }) if name == "missing"
+    ));
 }
 
 // --- Error offsets ---
