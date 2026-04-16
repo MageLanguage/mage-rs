@@ -137,10 +137,10 @@ impl<'a> Compiler<'a> {
             .root
             .get_extra_indices(call.arguments_start, call.arguments_end);
 
-        let Some(identifier_index) = match arguments.first() {
+        let Some(identifier_index) = (match arguments.first() {
             Some(FlatIndex::Identifier(index)) => Some(*index),
             _ => None,
-        } else {
+        }) else {
             return Err(CompileError::break_outside_block(
                 self.current_statement_offset,
             ));
@@ -185,11 +185,11 @@ impl<'a> Compiler<'a> {
             .root
             .get_extra_indices(call.arguments_start, call.arguments_end);
         let Some(identifier_index) =
-            if let Some(FlatIndex::Identifier(identifier_index)) = arguments.first() {
+            (if let Some(FlatIndex::Identifier(identifier_index)) = arguments.first() {
                 Some(*identifier_index)
             } else {
                 None
-            }
+            })
         else {
             return Err(CompileError::continue_outside_while(
                 self.current_statement_offset,
@@ -197,9 +197,9 @@ impl<'a> Compiler<'a> {
         };
 
         let while_patch = self.while_patches.iter().rev().find(|patch| {
-            patch.name_index.is_some_and(|name_index| {
-                self.string_index_equals(name_index, identifier_index)
-            })
+            patch
+                .name_index
+                .is_some_and(|name_index| self.string_index_equals(name_index, identifier_index))
         });
 
         let Some(while_patch) = while_patch else {
