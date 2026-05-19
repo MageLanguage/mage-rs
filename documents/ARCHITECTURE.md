@@ -6,10 +6,9 @@ Mage is being built toward a runtime-first execution model where:
 
 - everything is a variable
 - every variable has a type
-- files are implicit procedures
+- source code files are implicit procedures
 - declarations are resolved only when execution reaches them
 - only currently entered executable code is compiled
-- all executable code is ultimately executed as VM bytecode
 - test files are the default automated tooling entrypoints for execution, diagnostics, tracing, and debugging
 
 Where current implementation differs from the target design, that is explicitly marked.
@@ -39,7 +38,6 @@ The current codebase partially implements or prototypes:
 
 - syntax for the language
 - the required direct procedure declaration syntax
-- AST encoding for the required direct procedure declaration syntax
 - compiler recognition of the required direct procedure declaration shape
 - stack-based calling convention
 - source-to-bytecode mapping
@@ -95,8 +93,6 @@ Mage is both:
 
 ### 2.3. There are no privileged builtins
 
-Mage should not rely on a special semantic class of “builtins”.
-
 Everything callable is just a variable that exists in runtime.
 
 That includes names such as:
@@ -109,7 +105,6 @@ That includes names such as:
 - `continue`
 - `import`
 - `comment`
-- `bytecode`
 
 The default runtime may be populated with these variables at startup, but they remain ordinary variables from the language point of view.
 
@@ -164,7 +159,7 @@ Primitive types are types that fit into registers on target platforms.
 | F32  | Floating-point | 32   |
 | F64  | Floating-point | 64   |
 
-### 3.2. Builtin types and constructors
+### 3.2. Builtin types
 
 #### Type
 
@@ -187,30 +182,6 @@ Link : Class {
 };
 ```
 
-#### Class
-
-`Class` is a constructor that takes source and produces a type value.
-
-```mage
-Class : procedure Source, ^Type;
-```
-
-#### Interface
-
-`Interface` is a constructor that takes source and produces a type value.
-
-```mage
-Interface : procedure Source, ^Type;
-```
-
-#### Enumeration
-
-`Enumeration` constrains available values of another type.
-
-```mage
-Enumeration : procedure Source, ^Type;
-```
-
 #### Vector
 
 Sequence of generic elements.
@@ -223,19 +194,11 @@ Conceptually it is currently treated as an alias for `Vector` with element type 
 
 #### Number
 
-`Number` is an abstract numeric literal type.
-
-Conceptually it is currently treated as an alias for `String`.
+`Number` is an abstract numeric type on top of string, with methods for math operations.
 
 #### Source
 
-`Source` is definitely a type alias for string with source code.
-
-This is a critical rule.
-
-A source block is representable as source code text. It is valid to store a source block in a variable and later pass that variable to a callable value.
-
-Example:
+`Source` is a special type for parsed source code representation. It is valid to store a source block in a variable and use it later.
 
 ```mage
 text : { x = x + 1 };
@@ -245,41 +208,17 @@ x = 0;
 if x < 1, text;
 ```
 
-This means:
-
-- a source block can become a `Source` value
-- `Source` is textual source code
-- deferred execution and compilation can be driven from stored source text
-
 #### Void
 
-`Void` is the Mage representation of nothing.
+`Void` type and `void` variable are the Mage representation of nothing.
 
-It is used as the argument for zero-parameter procedure calls.
-
-### 3.3. Example target syntax
+It is used as argument for zero-parameter or zero-return procedures.
 
 ```mage
-Counter : Interface {
-    add : method {counter : Counter}, Void;
-    get : method {counter : Counter}, U64;
+do : procedure Void, Void {
 };
 
-InMemoryCounter : Class {
-    count : U64;
-};
-
-newInMemoryCounter : implement InMemoryCounter, Counter, {
-    add : procedure {in_memory_counter : ^InMemoryCounter}, Void {
-        in_memory_counter.count = in_memory_counter.count + 1;
-    };
-
-    get : procedure {in_memory_counter : ^InMemoryCounter}, U64 {
-        return in_memory_counter.count;
-    };
-};
-
-service = Service 0;
+do void;
 ```
 
 ---
@@ -318,9 +257,7 @@ return (add 0d3, 0d4);
 
 This is the current required model for procedure declarations and call syntax.
 
-The same universal call rule applies to bootstrap control flow helpers.
-
-That means `break` and `continue` are not treated as special syntax with implicit targets. In the current bootstrap semantics they must be called with an explicit label:
+The same universal call rule applies to everything callable for example to `break` and `continue` control flow helpers.
 
 ```mage
 break loop_label;
@@ -336,8 +273,8 @@ A procedure is a variable whose value is callable and executable.
 A procedure value conceptually owns:
 
 - its procedure type
-- a reference to its source code
-- its declaration-time environment or runtime context information
+- a reference to its source
+- its declaration-time environment and runtime context information
 - a zero or empty pointer or link to compiled bytecode for its own source block
 
 A procedure value should be created without compiled bytecode.
@@ -360,7 +297,7 @@ A file is not a special top-level artifact outside the procedure model.
 Conceptually, every file behaves like:
 
 ```mage
-main : (procedure Runtime, U64) {
+main : procedure Runtime, U64 {
     ...
 }
 ```
@@ -470,18 +407,6 @@ The precise export surface syntax may evolve later, but the architectural rule i
 - import assigns that returned public value
 - member access such as `example.add` works on that returned exported value
 
-### 5.4. Runtime sharing during import
-
-Import does **not** start a fresh runtime.
-
-Import uses the current runtime.
-
-This is important because it means:
-
-- imported code can observe current runtime state
-- imported code can contribute additional variables into the current runtime flow
-- import participates in the same execution model as all other calls
-
 ---
 
 ## 6. Resolution model
@@ -496,7 +421,7 @@ Example:
 
 ```mage
 Alias : U64;
-twice : (procedure {a : Alias}, Alias) {
+twice : procedure {a : Alias}, Alias {
     return a;
 }
 ```
@@ -648,11 +573,11 @@ Conceptually:
 ### 9.5. Current-style memory layout example
 
 ```mage
-test2 : (procedure {c : U64}, U64) {
+test2 : procedure {c : U64}, U64 {
     return c;
 };
 
-test1 : (procedure {x : U64; y : U64; z : U64}, U64) {
+test1 : procedure {x : U64; y : U64; z : U64}, U64 {
     a = 0d10;
     b = test2 a;
 };
@@ -694,16 +619,6 @@ Current high-level approach:
 2. second pass patches fixups with resolved offsets
 
 This exists today.
-
-The compiler currently recognizes the required grouped procedure declaration shape:
-
-```mage
-add : (procedure {x : U64; y : U64}, U64) {
-    return x + y;
-}
-```
-
-The obsolete direct declaration-with-body shape is no longer the supported procedure declaration form.
 
 However, the compiler still eagerly compiles nested source blocks in places like `if` and `while`, so entered-block-only compilation has not been implemented yet.
 
@@ -757,7 +672,7 @@ A file can define executable values without forcing them to be compiled.
 Example:
 
 ```mage
-add : (procedure {a : U64; b : U64}, U64) {
+add : procedure {a : U64; b : U64}, U64 {
     return a + b;
 }
 ```
@@ -812,9 +727,9 @@ These are hard architecture requirements.
 ### 10.5. Example test style
 
 ```mage
-example : import "example.hex"
+example : import "example.hex";
 
-assert (example.add 2, 2), 4
+assert (example.add 2, 2), 4;
 ```
 
 A test file should:
@@ -908,22 +823,20 @@ That means:
 
 ## 12. `.bytecode` artifacts
 
-### 12.1. Current `--save` is temporary
-
-The current save behavior is temporary and not the final architecture.
-
-### 12.2. Future `.bytecode` generation model
+### 12.1. Future `.bytecode` generation model
 
 In the future, `.bytecode` files should be generated explicitly from procedure values.
 
 Example:
 
 ```mage
-main : (procedure Void, U8) {
+core : import "core.hex";
+
+main : procedure Void, U8 {
     return 0d1;
 };
 
-bytecode "example", main;
+core.Compiler.compile main, "example";
 ```
 
 This means:
@@ -1130,10 +1043,10 @@ Examples:
 ```mage
 x : 0d42;
 name : "Alice";
-File.open : (procedure {path : String}, File) { ... };
+File.open : procedure {path : String}, File { ... };
 
-x = 0d10;
-x = x + 0d1;
+y = 0d10;
+y = y + 0d1;
 
 quotient, remainder = divide_mod 0d17, 0d5;
 
@@ -1152,8 +1065,8 @@ Examples:
 return 0d42;
 syscall.write file_descriptor, pointer, length;
 test void;
-return double factorial 0d5;
-(f x) y;
+return (double (factorial 0d5));
+procedure argument_to_procedure argument_to_closure;
 return (fibonacci n - 0d1) + (fibonacci n - 0d2);
 ```
 
@@ -1164,16 +1077,16 @@ Procedures, control flow, types, imports, comments, and modules are all intended
 Target-style examples:
 
 ```mage
-add : (procedure {x : U64; y : U64}, U64) {
-    if x == 0d0, { return y; };
+add : procedure {x : U64; y : U64}, U64 {
+    if x == 0d0, { return y };
     return x + y;
 };
 
-divide_mod : (procedure {a : U64; b : U64}, {q : U64; r : U64}) {
+divide_mod : procedure {a : U64; b : U64}, {q : U64; r : U64} {
     return a / b, a % b;
 };
 
-get_answer : (procedure Void, U64) {
+get_answer : procedure Void, U64 {
     return 0d42;
 };
 
